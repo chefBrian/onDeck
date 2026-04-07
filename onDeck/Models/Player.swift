@@ -4,9 +4,12 @@ struct Player: Identifiable, Hashable {
     let id: Int // MLB player ID
     let name: String
     let team: String
-    let position: PlayerPosition
+    let positions: Set<PlayerPosition>
 
-    enum PlayerPosition: Hashable {
+    var isPitcher: Bool { positions.contains(.pitcher) }
+    var isHitter: Bool { positions.contains(.hitter) }
+
+    enum PlayerPosition: String, Hashable, Codable {
         case hitter
         case pitcher
     }
