@@ -90,7 +90,7 @@ final class AppState {
         }
 
         await fetchScheduleAndStartMonitoring()
-        scheduleMidnightRefresh()
+        scheduleDailyRefresh()
     }
 
     // MARK: - Team Fetching
@@ -257,19 +257,28 @@ final class AppState {
         return "\(away) vs \(home)"
     }
 
-    // MARK: - Midnight Refresh
+    // MARK: - Daily Refresh (8 AM)
 
-    private func scheduleMidnightRefresh() {
+    private func scheduleDailyRefresh() {
         midnightTask?.cancel()
         midnightTask = Task {
             while !Task.isCancelled {
                 let now = Date()
                 let calendar = Calendar.current
-                guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: now),
-                      let midnight = calendar.date(bySettingHour: 0, minute: 0, second: 0, of: tomorrow) else {
-                    return
+                let hour = calendar.component(.hour, from: now)
+
+                // Calculate next 8 AM
+                let next8AM: Date
+                if hour < 8 {
+                    // Before 8 AM today - next refresh is 8 AM today
+                    next8AM = calendar.date(bySettingHour: 8, minute: 0, second: 0, of: now) ?? now
+                } else {
+                    // After 8 AM - next refresh is 8 AM tomorrow
+                    guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) else { return }
+                    next8AM = calendar.date(bySettingHour: 8, minute: 0, second: 0, of: tomorrow) ?? tomorrow
                 }
-                let interval = midnight.timeIntervalSince(now)
+
+                let interval = next8AM.timeIntervalSince(now)
                 do {
                     try await Task.sleep(for: .seconds(max(interval, 60)))
                 } catch {
