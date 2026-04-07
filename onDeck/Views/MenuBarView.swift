@@ -4,19 +4,16 @@ struct MenuBarView: View {
     let appState: AppState
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                activeSection
-                inGameSection
-                upcomingSection
-                doneSection
-                emptySection
-                errorSection
-                footerSection
-            }
+        VStack(alignment: .leading, spacing: 0) {
+            activeSection
+            inGameSection
+            upcomingSection
+            doneSection
+            emptySection
+            errorSection
+            footerSection
         }
         .frame(width: 280)
-        .frame(maxHeight: 500)
         .transaction { $0.animation = nil }
     }
 
