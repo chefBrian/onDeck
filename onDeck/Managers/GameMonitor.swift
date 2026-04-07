@@ -29,8 +29,15 @@ final class GameMonitor {
         rosterPlayers = Dictionary(uniqueKeysWithValues: players.map { ($0.id, $0) })
         isMonitoring = true
 
+        print("[GameMonitor] Starting monitoring for \(games.count) games")
+        print("[GameMonitor] Watching \(rosterPlayerIDs.count) roster player IDs: \(rosterPlayerIDs.sorted())")
+        for player in players {
+            print("[GameMonitor]   \(player.id) = \(player.name) (\(player.team))")
+        }
+
         for game in games {
             let gamePk = game.id
+            print("[GameMonitor] Polling game \(gamePk): \(game.awayTeam) @ \(game.homeTeam)")
             pollingTasks[gamePk] = Task { [weak self] in
                 await self?.pollGame(gamePk: gamePk, game: game)
             }
@@ -66,6 +73,7 @@ final class GameMonitor {
 
                 // Stop polling if game is over
                 if feed.gameState == "Final" {
+                    print("[GameMonitor] Game \(gamePk) is Final - marking players done")
                     let playerIDsInGame = rosterPlayerIDs.filter { id in
                         isPlayerInGame(playerID: id, game: game)
                     }
@@ -89,7 +97,10 @@ final class GameMonitor {
     // MARK: - Feed Processing
 
     private func processFeed(_ feed: LiveFeedData, gamePk: Int, game: Game) {
-        guard feed.gameState == "Live" else { return }
+        guard feed.gameState == "Live" else {
+            print("[GameMonitor] Game \(gamePk) state: \(feed.gameState) (skipping)")
+            return
+        }
 
         let gameContext = PlayerState.GameContext(
             gamePk: gamePk,
@@ -99,13 +110,26 @@ final class GameMonitor {
         )
 
         // Check current batter
-        if let batterID = feed.currentBatterID, rosterPlayerIDs.contains(batterID) {
-            stateManager?.update(playerID: batterID, state: .active(gameContext))
+        if let batterID = feed.currentBatterID {
+            if rosterPlayerIDs.contains(batterID) {
+                let isNew = lastBatterID[gamePk] != batterID
+                print("[GameMonitor] >>> ROSTER BATTER: \(feed.currentBatterName ?? "?") (ID \(batterID)) - \(isNew ? "NEW" : "same") - \(formatInning(feed))")
+                stateManager?.update(playerID: batterID, state: .active(gameContext))
+            } else {
+                // Only log occasionally to reduce noise
+                if lastBatterID[gamePk] != batterID {
+                    print("[GameMonitor] Batter \(feed.currentBatterName ?? "?") (ID \(batterID)) not on roster")
+                }
+            }
         }
 
         // Check current pitcher
-        if let pitcherID = feed.currentPitcherID, rosterPlayerIDs.contains(pitcherID) {
-            stateManager?.update(playerID: pitcherID, state: .active(gameContext))
+        if let pitcherID = feed.currentPitcherID {
+            if rosterPlayerIDs.contains(pitcherID) {
+                let isNew = lastPitcherID[gamePk] != pitcherID
+                print("[GameMonitor] >>> ROSTER PITCHER: \(feed.currentPitcherName ?? "?") (ID \(pitcherID)) - \(isNew ? "NEW" : "same") - \(formatInning(feed))")
+                stateManager?.update(playerID: pitcherID, state: .active(gameContext))
+            }
         }
 
         // Check if previous batter from our roster is no longer active
