@@ -5,14 +5,23 @@ final class NotificationManager: Sendable {
 
     func requestPermission() async -> Bool {
         do {
-            return try await UNUserNotificationCenter.current()
-                .requestAuthorization(options: [.alert, .sound])
+            let granted = try await UNUserNotificationCenter.current()
+                .requestAuthorization(options: [.alert, .sound, .badge])
+            print("[Notifications] Permission granted: \(granted)")
+            return granted
         } catch {
+            print("[Notifications] Permission error: \(error)")
             return false
         }
     }
 
     func send(title: String, body: String, identifier: String? = nil) async {
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        guard settings.authorizationStatus == .authorized else {
+            print("[Notifications] Not authorized (status: \(settings.authorizationStatus.rawValue))")
+            return
+        }
+
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
@@ -21,7 +30,12 @@ final class NotificationManager: Sendable {
         let id = identifier ?? UUID().uuidString
         let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
 
-        try? await UNUserNotificationCenter.current().add(request)
+        do {
+            try await UNUserNotificationCenter.current().add(request)
+            print("[Notifications] Sent: \(title) - \(body)")
+        } catch {
+            print("[Notifications] Failed to send: \(error)")
+        }
     }
 
     // MARK: - Typed Notifications
