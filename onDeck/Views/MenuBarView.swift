@@ -206,9 +206,12 @@ struct MenuBarView: View {
                 Text("\(awayShort) \(feed.awayScore)-\(feed.homeScore) \(homeShort)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                inningLabel(feed)
-                    .font(.caption2)
-                    .foregroundStyle(.green)
+                HStack(spacing: 3) {
+                    inningLabel(feed)
+                    OutsIndicator(outs: feed.outs)
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
             } else {
                 Text("In Game")
                     .font(.caption)
