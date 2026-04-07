@@ -17,6 +17,7 @@ struct MenuBarView: View {
         }
         .frame(width: 280)
         .frame(maxHeight: 500)
+        .transaction { $0.animation = nil }
     }
 
     // MARK: - Sections
@@ -34,9 +35,9 @@ struct MenuBarView: View {
 
     @ViewBuilder
     private var inGameSection: some View {
-        if !inGamePlayers.isEmpty {
+        if !appState.inGamePlayers.isEmpty {
             sectionHeader("In Game")
-            ForEach(inGamePlayers) { player in
+            ForEach(appState.inGamePlayers) { player in
                 inGamePlayerRow(player)
             }
             divider()
@@ -45,9 +46,9 @@ struct MenuBarView: View {
 
     @ViewBuilder
     private var upcomingSection: some View {
-        if !trueUpcomingPlayers.isEmpty {
+        if !appState.upcomingPlayers.isEmpty {
             sectionHeader("Upcoming")
-            ForEach(trueUpcomingPlayers) { player in
+            ForEach(appState.upcomingPlayers) { player in
                 upcomingPlayerRow(player)
             }
             divider()
@@ -68,7 +69,7 @@ struct MenuBarView: View {
     @ViewBuilder
     private var emptySection: some View {
         if appState.activePlayers.isEmpty && appState.upcomingPlayers.isEmpty
-            && appState.inactivePlayers.isEmpty {
+            && appState.inGamePlayers.isEmpty && appState.inactivePlayers.isEmpty {
             emptyState()
             divider()
         }
@@ -91,26 +92,6 @@ struct MenuBarView: View {
 
     private var footerSection: some View {
         FooterButtons()
-    }
-
-    // MARK: - Computed Player Lists
-
-    private var inGamePlayers: [Player] {
-        appState.upcomingPlayers.filter { player in
-            if case .upcoming(let startTime) = appState.stateManager.playerStates[player.id] {
-                return startTime < .now
-            }
-            return false
-        }
-    }
-
-    private var trueUpcomingPlayers: [Player] {
-        appState.upcomingPlayers.filter { player in
-            if case .upcoming(let startTime) = appState.stateManager.playerStates[player.id] {
-                return startTime >= .now
-            }
-            return true
-        }
     }
 
     // MARK: - Reusable Components

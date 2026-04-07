@@ -5,7 +5,8 @@ import SwiftUI
 final class AppState {
     // Player lists (derived from StateManager)
     var activePlayers: [Player] = []
-    var upcomingPlayers: [Player] = []
+    var inGamePlayers: [Player] = []     // game started, not at bat
+    var upcomingPlayers: [Player] = []   // game hasn't started
     var inactivePlayers: [Player] = []
     var games: [Game] = []
 
@@ -179,21 +180,28 @@ final class AppState {
 
     private func updatePlayerLists() {
         var active: [Player] = []
+        var inGame: [Player] = []
         var upcoming: [Player] = []
         var inactive: [Player] = []
 
+        let now = Date.now
         for player in rosterManager.players {
             switch stateManager.playerStates[player.id] {
             case .active:
                 active.append(player)
-            case .upcoming:
-                upcoming.append(player)
+            case .upcoming(let startTime):
+                if startTime < now {
+                    inGame.append(player)
+                } else {
+                    upcoming.append(player)
+                }
             case .inactive, .none:
                 inactive.append(player)
             }
         }
 
         activePlayers = active
+        inGamePlayers = inGame
         upcomingPlayers = upcoming
         inactivePlayers = inactive
     }
