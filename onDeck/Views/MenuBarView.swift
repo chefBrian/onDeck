@@ -378,10 +378,7 @@ struct OutsIndicator: View {
 struct FooterButtons: View {
     var body: some View {
         HStack {
-            Button {
-                NSApp.activate(ignoringOtherApps: true)
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-            } label: {
+            SettingsLink {
                 Text("Settings...")
             }
             Spacer()
@@ -396,14 +393,5 @@ struct FooterButtons: View {
         .font(.caption)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-    }
-}
-
-// MARK: - SettingsLink Helper
-
-extension SettingsLink {
-    static func triggerOpen() {
-        NSApp.activate(ignoringOtherApps: true)
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
     }
 }
