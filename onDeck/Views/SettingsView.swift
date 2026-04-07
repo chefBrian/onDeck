@@ -25,12 +25,7 @@ struct SettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                     } else if !appState.availableTeams.isEmpty {
-                        Picker("Team", selection: Binding(
-                            get: { appState.selectedTeamID },
-                            set: { newValue in
-                                Task { await appState.selectTeam(newValue) }
-                            }
-                        )) {
+                        Picker("Team", selection: $appState.selectedTeamID) {
                             Text("Select a team...").tag("")
                             ForEach(appState.availableTeams) { team in
                                 Text(team.name).tag(team.id)
