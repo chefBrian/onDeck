@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @State private var rosterURL = UserDefaults.standard.string(forKey: "rosterURL") ?? ""
+    @Bindable var appState: AppState
     @State private var notifyBatting = UserDefaults.standard.bool(forKey: "notifyBatting", default: true)
     @State private var notifyPitching = UserDefaults.standard.bool(forKey: "notifyPitching", default: true)
     @State private var notifyAtBatResult = UserDefaults.standard.bool(forKey: "notifyAtBatResult", default: true)
@@ -10,8 +10,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Fantrax Roster") {
-                TextField("Roster URL", text: $rosterURL)
-                    .onSubmit { UserDefaults.standard.set(rosterURL, forKey: "rosterURL") }
+                TextField("Roster URL", text: $appState.rosterURL)
             }
 
             Section("Notifications") {
