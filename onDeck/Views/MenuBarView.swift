@@ -120,7 +120,7 @@ struct MenuBarView: View {
         Button { openStream(for: player) } label: {
             activePlayerContent(player)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MenuRowButtonStyle())
     }
 
     private func activePlayerContent(_ player: Player) -> some View {
@@ -193,7 +193,7 @@ struct MenuBarView: View {
         Button { openStream(for: player) } label: {
             inGamePlayerContent(player)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MenuRowButtonStyle())
     }
 
     private func inGamePlayerContent(_ player: Player) -> some View {
@@ -318,6 +318,21 @@ struct MenuBarView: View {
     }
 }
 
+// MARK: - Menu Row Button Style
+
+struct MenuRowButtonStyle: ButtonStyle {
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(isHovered ? .white.opacity(0.1) : .clear)
+            )
+            .onHover { isHovered = $0 }
+    }
+}
+
 // MARK: - Bases Diamond
 
 struct BasesDiagram: View {
@@ -376,7 +391,7 @@ struct FooterButtons: View {
                 Text("Quit")
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MenuRowButtonStyle())
         .foregroundStyle(.secondary)
         .font(.caption)
         .padding(.horizontal, 12)
