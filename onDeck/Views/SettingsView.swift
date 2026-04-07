@@ -10,10 +10,44 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Fantrax Roster") {
-                TextField("Roster URL", text: $appState.rosterURL)
+                TextField("League URL", text: $appState.rosterURL)
                     .onSubmit {
-                        Task { await appState.resyncRoster() }
+                        Task { await appState.fetchTeams() }
                     }
+
+                // Team picker - shown when URL has no teamId
+                if !appState.rosterURL.isEmpty && !appState.urlHasTeamID {
+                    if appState.isLoadingTeams {
+                        HStack {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Loading teams...")
+                                .foregroundStyle(.secondary)
+                        }
+                    } else if !appState.availableTeams.isEmpty {
+                        Picker("Team", selection: Binding(
+                            get: { appState.selectedTeamID },
+                            set: { newValue in
+                                Task { await appState.selectTeam(newValue) }
+                            }
+                        )) {
+                            Text("Select a team...").tag("")
+                            ForEach(appState.availableTeams) { team in
+                                Text(team.name).tag(team.id)
+                            }
+                        }
+                    } else if appState.availableTeams.isEmpty && appState.parsedLeagueID != nil {
+                        Button("Load Teams") {
+                            Task { await appState.fetchTeams() }
+                        }
+                    }
+
+                    if let error = appState.teamsError {
+                        Text(error)
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
+                }
 
                 HStack {
                     if appState.rosterManager.isSyncing {
@@ -32,7 +66,7 @@ struct SettingsView: View {
                     Button("Sync Now") {
                         Task { await appState.resyncRoster() }
                     }
-                    .disabled(appState.rosterManager.isSyncing || appState.rosterURL.isEmpty)
+                    .disabled(appState.rosterManager.isSyncing || appState.effectiveTeamID == nil)
                 }
 
                 if let error = appState.rosterManager.error {
@@ -68,7 +102,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: 350)
+        .frame(width: 450, height: 400)
     }
 }
 
