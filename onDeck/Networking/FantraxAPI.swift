@@ -28,9 +28,9 @@ struct FantraxAPI: Sendable {
 
     // MARK: - Fetch Teams
 
-    /// Fetches the list of teams in a league using getLeagueStandings.
+    /// Fetches the list of teams in a league using getStandings.
     func fetchTeams(leagueID: String) async throws -> [FantraxTeam] {
-        let json = try await postRequest(leagueID: leagueID, method: "getLeagueStandings", data: ["leagueId": leagueID])
+        let json = try await postRequest(leagueID: leagueID, method: "getStandings", data: ["leagueId": leagueID])
 
         var teams: [FantraxTeam] = []
         findTeams(in: json, teams: &teams)
@@ -112,11 +112,11 @@ struct FantraxAPI: Sendable {
     }
 
     /// Recursively walks the JSON tree to find team objects.
-    /// Team objects have a `teamId` and `name` field.
+    /// In the standings response, teams have `teamId` and `content` (team name) fields.
     private func findTeams(in object: Any, teams: inout [FantraxTeam]) {
         if let dict = object as? [String: Any] {
             if let teamId = dict["teamId"] as? String,
-               let name = dict["name"] as? String,
+               let name = dict["content"] as? String,
                !teamId.isEmpty, !name.isEmpty {
                 teams.append(FantraxTeam(id: teamId, name: name))
             }
