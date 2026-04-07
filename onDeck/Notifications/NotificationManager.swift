@@ -1,3 +1,4 @@
+import AppKit
 import UserNotifications
 
 final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate, Sendable {
@@ -6,6 +7,17 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate, Se
                                 willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         completionHandler([.banner, .sound])
+    }
+
+    // Open stream URL when notification is clicked
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        if let urlString = response.notification.request.content.userInfo["streamURL"] as? String,
+           let url = URL(string: urlString) {
+            NSWorkspace.shared.open(url)
+        }
+        completionHandler()
     }
 }
 
@@ -29,7 +41,7 @@ final class NotificationManager: Sendable {
         }
     }
 
-    func send(title: String, body: String, identifier: String? = nil) async {
+    func send(title: String, body: String, identifier: String? = nil, streamURL: URL? = nil) async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         guard settings.authorizationStatus == .authorized else {
             print("[Notifications] Not authorized (status: \(settings.authorizationStatus.rawValue))")
@@ -40,6 +52,9 @@ final class NotificationManager: Sendable {
         content.title = title
         content.body = body
         content.sound = .default
+        if let streamURL {
+            content.userInfo["streamURL"] = streamURL.absoluteString
+        }
 
         let id = identifier ?? UUID().uuidString
         let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
@@ -54,35 +69,39 @@ final class NotificationManager: Sendable {
 
     // MARK: - Typed Notifications
 
-    func notifyBatting(playerName: String, game: String, inning: String) async {
+    func notifyBatting(playerName: String, game: String, inning: String, streamURL: URL?) async {
         guard UserDefaults.standard.bool(forKey: "notifyBatting", default: true) else { return }
         await send(
             title: "\(playerName) is batting",
-            body: "\(game), \(inning)"
+            body: "\(game), \(inning)",
+            streamURL: streamURL
         )
     }
 
-    func notifyPitching(playerName: String, game: String, inning: String) async {
+    func notifyPitching(playerName: String, game: String, inning: String, streamURL: URL?) async {
         guard UserDefaults.standard.bool(forKey: "notifyPitching", default: true) else { return }
         await send(
             title: "\(playerName) is taking the mound",
-            body: "\(game), \(inning)"
+            body: "\(game), \(inning)",
+            streamURL: streamURL
         )
     }
 
-    func notifyAtBatResult(playerName: String, description: String) async {
+    func notifyAtBatResult(playerName: String, description: String, streamURL: URL?) async {
         guard UserDefaults.standard.bool(forKey: "notifyAtBatResult", default: true) else { return }
         await send(
             title: "\(playerName)",
-            body: description
+            body: description,
+            streamURL: streamURL
         )
     }
 
-    func notifyPitchingResult(playerName: String, description: String) async {
+    func notifyPitchingResult(playerName: String, description: String, streamURL: URL?) async {
         guard UserDefaults.standard.bool(forKey: "notifyPitchingResult", default: true) else { return }
         await send(
             title: "\(playerName)",
-            body: description
+            body: description,
+            streamURL: streamURL
         )
     }
 }

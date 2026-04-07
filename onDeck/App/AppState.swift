@@ -222,44 +222,54 @@ final class AppState {
 
             if !wasActive {
                 let gameString = formatGameString(context: context)
+                let streamURL = streamURL(for: context.gamePk)
                 if player.isPitcher && !player.isHitter {
                     print("[Notification] PITCHING: \(player.name) - \(gameString), \(context.inning)")
                     await notificationManager.notifyPitching(
                         playerName: player.name,
                         game: gameString,
-                        inning: context.inning
+                        inning: context.inning,
+                        streamURL: streamURL
                     )
                 } else {
                     print("[Notification] BATTING: \(player.name) - \(gameString), \(context.inning)")
                     await notificationManager.notifyBatting(
                         playerName: player.name,
                         game: gameString,
-                        inning: context.inning
+                        inning: context.inning,
+                        streamURL: streamURL
                     )
                 }
             }
 
-        case (.active, .upcoming):
+        case (.active(let context), .upcoming):
             if let lastFeedResult = gameMonitor.lastPlayDescriptions[playerID] {
                 if player.isHitter {
                     await notificationManager.notifyAtBatResult(
                         playerName: player.name,
-                        description: lastFeedResult
+                        description: lastFeedResult,
+                        streamURL: streamURL(for: context.gamePk)
                     )
                 }
             }
 
-        case (.active, .inactive(.substituted)):
+        case (.active(let context), .inactive(.substituted)):
             if player.isPitcher {
                 await notificationManager.notifyPitchingResult(
                     playerName: player.name,
-                    description: "\(player.name) has been pulled from the game"
+                    description: "\(player.name) has been pulled from the game",
+                    streamURL: streamURL(for: context.gamePk)
                 )
             }
 
         default:
             break
         }
+    }
+
+    private func streamURL(for gamePk: Int) -> URL? {
+        guard let game = games.first(where: { $0.id == gamePk }) else { return nil }
+        return StreamLinkRouter.url(for: game)
     }
 
     private func formatGameString(context: PlayerState.GameContext) -> String {
