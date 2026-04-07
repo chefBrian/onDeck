@@ -376,11 +376,12 @@ struct OutsIndicator: View {
 // MARK: - Footer Buttons
 
 struct FooterButtons: View {
+    @Environment(\.openSettings) private var openSettings
+
     var body: some View {
         HStack {
             Button {
-                NSApp.activate(ignoringOtherApps: true)
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                openSettings()
             } label: {
                 Text("Settings...")
             }
