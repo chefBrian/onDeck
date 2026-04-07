@@ -172,9 +172,13 @@ struct MenuBarView: View {
 
             // Inning + Count + Outs
             VStack(alignment: .trailing, spacing: 3) {
-                Text(ctx.inning)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 1) {
+                    Image(systemName: ctx.inning.hasPrefix("Top") ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
+                        .font(.system(size: 6))
+                    Text(ctx.inning.filter(\.isNumber))
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
                 Text("\(ctx.balls)-\(ctx.strikes)")
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                 OutsIndicator(outs: ctx.outs)
@@ -197,13 +201,12 @@ struct MenuBarView: View {
             Text(player.name)
             Spacer()
             if let feed = feedForPlayer(player) {
-                let inning = formatInning(feed)
                 let awayShort = feed.awayTeam.split(separator: " ").last.map(String.init) ?? feed.awayTeam
                 let homeShort = feed.homeTeam.split(separator: " ").last.map(String.init) ?? feed.homeTeam
                 Text("\(awayShort) \(feed.awayScore)-\(feed.homeScore) \(homeShort)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text(inning)
+                inningLabel(feed)
                     .font(.caption2)
                     .foregroundStyle(.green)
             } else {
@@ -296,10 +299,16 @@ struct MenuBarView: View {
         }
     }
 
-    private func formatInning(_ feed: LiveFeedData) -> String {
-        guard let inning = feed.inning, let half = feed.inningHalf else { return "" }
-        let shortHalf = half == "Top" ? "T" : "B"
-        return "\(shortHalf)\(inning)"
+    private func inningLabel(_ feed: LiveFeedData) -> some View {
+        HStack(spacing: 1) {
+            if let half = feed.inningHalf {
+                Image(systemName: half == "Top" ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
+                    .font(.system(size: 6))
+            }
+            if let inning = feed.inning {
+                Text("\(inning)")
+            }
+        }
     }
 
     private func openStream(for player: Player) {
