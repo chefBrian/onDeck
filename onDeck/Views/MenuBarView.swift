@@ -14,9 +14,18 @@ struct MenuBarView: View {
                 Divider()
             }
 
-            if !appState.upcomingPlayers.isEmpty {
+            if !inGamePlayers.isEmpty {
+                Section("In Game") {
+                    ForEach(inGamePlayers) { player in
+                        Text(player.name)
+                    }
+                }
+                Divider()
+            }
+
+            if !trueUpcomingPlayers.isEmpty {
                 Section("Upcoming") {
-                    ForEach(appState.upcomingPlayers) { player in
+                    ForEach(trueUpcomingPlayers) { player in
                         upcomingPlayerRow(player)
                     }
                 }
@@ -34,7 +43,7 @@ struct MenuBarView: View {
             }
 
             if appState.activePlayers.isEmpty && appState.upcomingPlayers.isEmpty
-                && appState.inactivePlayers.isEmpty {
+                && appState.inactivePlayers.isEmpty && inGamePlayers.isEmpty {
                 if appState.rosterManager.isSyncing {
                     Text("Syncing roster...")
                         .foregroundStyle(.secondary)
@@ -71,6 +80,28 @@ struct MenuBarView: View {
         }
     }
 
+    // MARK: - Computed Player Lists
+
+    /// Players whose game has already started but aren't currently at bat/pitching.
+    private var inGamePlayers: [Player] {
+        appState.upcomingPlayers.filter { player in
+            if case .upcoming(let startTime) = appState.stateManager.playerStates[player.id] {
+                return startTime < .now
+            }
+            return false
+        }
+    }
+
+    /// Players whose game hasn't started yet.
+    private var trueUpcomingPlayers: [Player] {
+        appState.upcomingPlayers.filter { player in
+            if case .upcoming(let startTime) = appState.stateManager.playerStates[player.id] {
+                return startTime >= .now
+            }
+            return true
+        }
+    }
+
     // MARK: - Row Views
 
     private func activePlayerRow(_ player: Player) -> some View {
@@ -97,9 +128,15 @@ struct MenuBarView: View {
             Text(player.name)
             Spacer()
             if case .upcoming(let startTime) = appState.stateManager.playerStates[player.id] {
-                Text(startTime, style: .time)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if startTime < .now {
+                    Text("In Game")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                } else {
+                    Text(startTime, style: .time)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
