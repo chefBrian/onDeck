@@ -356,7 +356,7 @@ struct BasesDiagram: View {
     private func diamond(filled: Bool) -> some View {
         Image(systemName: filled ? "diamond.fill" : "diamond")
             .font(.system(size: 9))
-            .foregroundStyle(filled ? .yellow : .gray.opacity(0.3))
+            .foregroundStyle(filled ? .white : .gray.opacity(0.3))
     }
 }
 
@@ -369,7 +369,7 @@ struct OutsIndicator: View {
         HStack(spacing: 3) {
             ForEach(0..<3, id: \.self) { i in
                 Circle()
-                    .fill(i < outs ? .yellow : .gray.opacity(0.3))
+                    .fill(i < outs ? .white : .gray.opacity(0.3))
                     .frame(width: 6, height: 6)
             }
         }
