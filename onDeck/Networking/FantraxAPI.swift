@@ -51,8 +51,28 @@ struct FantraxAPI: Sendable {
     func fetchRoster(leagueID: String, teamID: String) async throws -> [FantraxPlayer] {
         let json = try await postRequest(leagueID: leagueID, method: "getTeamRosterInfo", data: ["leagueId": leagueID, "teamId": teamID])
 
+        // Navigate to responses[0].data.tables and extract the top-level .scorer
+        // from each row. Don't recurse into cells - they contain opposing pitcher popovers.
         var players: [FantraxPlayer] = []
-        findScorers(in: json, players: &players)
+
+        if let responses = json["responses"] as? [[String: Any]],
+           let data = responses.first?["data"] as? [String: Any],
+           let tables = data["tables"] as? [[String: Any]] {
+            for table in tables {
+                if let rows = table["rows"] as? [[String: Any]] {
+                    for row in rows {
+                        if let scorer = row["scorer"] as? [String: Any],
+                           let name = scorer["name"] as? String,
+                           scorer["scorerId"] != nil {
+                            let teamShortName = scorer["teamShortName"] as? String ?? ""
+                            let posString = scorer["posShortNames"] as? String ?? ""
+                            let positions = posString.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
+                            players.append(FantraxPlayer(name: name, teamShortName: teamShortName, positions: positions))
+                        }
+                    }
+                }
+            }
+        }
 
         if players.isEmpty {
             throw FantraxError.invalidResponse
