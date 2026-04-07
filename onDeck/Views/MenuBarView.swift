@@ -277,7 +277,8 @@ struct MenuBarView: View {
                 Color.clear.frame(width: 5, height: 5)
             }
             Text(team)
-                .frame(width: 36, alignment: .leading)
+                .frame(width: 50, alignment: .leading)
+                .lineLimit(1)
             Text("\(score)")
                 .frame(width: 20, alignment: .trailing)
         }
