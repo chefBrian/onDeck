@@ -117,12 +117,6 @@ final class AppState {
         isLoadingTeams = false
     }
 
-    /// Called when user selects a team from the picker.
-    func selectTeam(_ teamID: String) async {
-        selectedTeamID = teamID
-        await resyncRoster()
-    }
-
     /// Manually trigger a roster re-sync.
     func resyncRoster() async {
         guard let leagueID = parsedLeagueID,
