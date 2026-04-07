@@ -211,12 +211,14 @@ final class AppState {
             if !wasActive {
                 let gameString = formatGameString(gamePk: context.gamePk)
                 if player.isPitcher && !player.isHitter {
+                    print("[Notification] PITCHING: \(player.name) - \(gameString), \(context.inning)")
                     await notificationManager.notifyPitching(
                         playerName: player.name,
                         game: gameString,
                         inning: context.inning
                     )
                 } else {
+                    print("[Notification] BATTING: \(player.name) - \(gameString), \(context.inning)")
                     await notificationManager.notifyBatting(
                         playerName: player.name,
                         game: gameString,
