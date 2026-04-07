@@ -21,6 +21,9 @@ final class GameMonitor {
     /// Latest feed data per game (for In Game player display).
     var latestFeeds: [Int: LiveFeedData] = [:] // gamePk -> feed
 
+    /// Lineup player IDs per game (batting order + pitchers).
+    var lineupPlayerIDs: [Int: Set<Int>] = [:] // gamePk -> set of player IDs in lineup
+
     func configure(stateManager: StateManager) {
         self.stateManager = stateManager
     }
@@ -54,6 +57,7 @@ final class GameMonitor {
         pollingTasks.removeAll()
         lastBatterID.removeAll()
         lastPitcherID.removeAll()
+        lineupPlayerIDs.removeAll()
         isMonitoring = false
     }
 
@@ -101,6 +105,12 @@ final class GameMonitor {
 
     private func processFeed(_ feed: LiveFeedData, gamePk: Int, game: Game) {
         latestFeeds[gamePk] = feed
+
+        // Track lineup (available before game goes Live)
+        let lineupIDs = Set(feed.homeBattingOrder + feed.awayBattingOrder + feed.homePitchers + feed.awayPitchers)
+        if !lineupIDs.isEmpty {
+            lineupPlayerIDs[gamePk] = lineupIDs
+        }
 
         guard feed.gameState == "Live" else {
             print("[GameMonitor] Game \(gamePk) state: \(feed.gameState) (skipping)")

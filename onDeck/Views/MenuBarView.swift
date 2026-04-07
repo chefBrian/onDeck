@@ -1,14 +1,13 @@
 import SwiftUI
 
 struct MenuBarView: View {
-    let appState: AppState
+    @Bindable var appState: AppState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             activeSection
             inGameSection
             upcomingSection
-            doneSection
             emptySection
             errorSection
             footerSection
@@ -53,20 +52,9 @@ struct MenuBarView: View {
     }
 
     @ViewBuilder
-    private var doneSection: some View {
-        if !appState.inactivePlayers.isEmpty {
-            sectionHeader("Done / Off")
-            ForEach(appState.inactivePlayers) { player in
-                inactivePlayerRow(player)
-            }
-            divider()
-        }
-    }
-
-    @ViewBuilder
     private var emptySection: some View {
         if appState.activePlayers.isEmpty && appState.upcomingPlayers.isEmpty
-            && appState.inGamePlayers.isEmpty && appState.inactivePlayers.isEmpty {
+            && appState.inGamePlayers.isEmpty {
             emptyState()
             divider()
         }
@@ -228,16 +216,6 @@ struct MenuBarView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 3)
-    }
-
-    private func inactivePlayerRow(_ player: Player) -> some View {
-        HStack {
-            Text(player.name)
-                .foregroundStyle(.secondary)
-            Spacer()
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 3)

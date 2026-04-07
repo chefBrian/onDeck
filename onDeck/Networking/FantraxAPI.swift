@@ -5,6 +5,7 @@ struct FantraxAPI: Sendable {
         let name: String
         let teamShortName: String
         let positions: [String]
+        let statusId: Int // 1=Active, 2=Reserve, 3=Inj Res, 9=Minors
     }
 
     struct FantraxTeam: Sendable, Identifiable, Hashable {
@@ -67,7 +68,8 @@ struct FantraxAPI: Sendable {
                             let teamShortName = scorer["teamShortName"] as? String ?? ""
                             let posString = scorer["posShortNames"] as? String ?? ""
                             let positions = posString.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
-                            players.append(FantraxPlayer(name: name, teamShortName: teamShortName, positions: positions))
+                            let statusId = row["statusId"] as? Int ?? 1
+                            players.append(FantraxPlayer(name: name, teamShortName: teamShortName, positions: positions, statusId: statusId))
                         }
                     }
                 }
@@ -119,7 +121,7 @@ struct FantraxAPI: Sendable {
                 let teamShortName = dict["teamShortName"] as? String ?? ""
                 let posString = dict["posShortNames"] as? String ?? ""
                 let positions = posString.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
-                players.append(FantraxPlayer(name: name, teamShortName: teamShortName, positions: positions))
+                players.append(FantraxPlayer(name: name, teamShortName: teamShortName, positions: positions, statusId: 1))
             }
             for value in dict.values {
                 findScorers(in: value, players: &players)

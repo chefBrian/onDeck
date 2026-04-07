@@ -7,7 +7,6 @@ final class AppState {
     var activePlayers: [Player] = []
     var inGamePlayers: [Player] = []     // game started, not at bat
     var upcomingPlayers: [Player] = []   // game hasn't started
-    var inactivePlayers: [Player] = []
     var games: [Game] = []
 
     // Managers
@@ -27,6 +26,14 @@ final class AppState {
     var selectedTeamID: String {
         get { UserDefaults.standard.string(forKey: "selectedTeamID") ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: "selectedTeamID") }
+    }
+
+    var hideBenchPlayers: Bool {
+        get { UserDefaults.standard.bool(forKey: "hideBenchPlayers") }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "hideBenchPlayers")
+            updatePlayerLists()
+        }
     }
 
     // Team picker state
@@ -186,10 +193,10 @@ final class AppState {
         var active: [Player] = []
         var inGame: [Player] = []
         var upcoming: [Player] = []
-        var inactive: [Player] = []
 
         let now = Date.now
         for player in rosterManager.players {
+            if hideBenchPlayers && player.isOnBench { continue }
             switch stateManager.playerStates[player.id] {
             case .active:
                 active.append(player)
@@ -200,14 +207,13 @@ final class AppState {
                     upcoming.append(player)
                 }
             case .inactive, .none:
-                inactive.append(player)
+                break
             }
         }
 
         activePlayers = active
         inGamePlayers = inGame
         upcomingPlayers = upcoming
-        inactivePlayers = inactive
     }
 
     // MARK: - Notifications

@@ -74,6 +74,8 @@ struct MLBStatsAPI: Sendable {
 
         let offense = linescore?.offense
 
+        let boxscore = response.liveData.boxscore
+
         return LiveFeedData(
             gameState: response.gameData.status.abstractGameState,
             currentBatterID: currentPlay?.matchup.batter.id,
@@ -94,7 +96,11 @@ struct MLBStatsAPI: Sendable {
             runnerOnThird: offense?.third != nil,
             isPlayComplete: currentPlay?.about.isComplete ?? false,
             lastPlayEvent: currentPlay?.result?.event,
-            lastPlayDescription: currentPlay?.result?.description
+            lastPlayDescription: currentPlay?.result?.description,
+            homeBattingOrder: boxscore?.teams.home.battingOrder ?? [],
+            awayBattingOrder: boxscore?.teams.away.battingOrder ?? [],
+            homePitchers: boxscore?.teams.home.pitchers ?? [],
+            awayPitchers: boxscore?.teams.away.pitchers ?? []
         )
     }
 
@@ -130,6 +136,10 @@ struct LiveFeedData: Sendable {
     let isPlayComplete: Bool
     let lastPlayEvent: String?
     let lastPlayDescription: String?
+    let homeBattingOrder: [Int]
+    let awayBattingOrder: [Int]
+    let homePitchers: [Int]
+    let awayPitchers: [Int]
 }
 
 // MARK: - Private Codable Types (JSON Parsing Only)
@@ -220,6 +230,21 @@ private struct FeedTeamEntry: Codable {
 private struct FeedLiveData: Codable {
     let plays: FeedPlays?
     let linescore: FeedLinescore?
+    let boxscore: FeedBoxscore?
+}
+
+private struct FeedBoxscore: Codable {
+    let teams: FeedBoxscoreTeams
+}
+
+private struct FeedBoxscoreTeams: Codable {
+    let away: FeedBoxscoreTeamEntry
+    let home: FeedBoxscoreTeamEntry
+}
+
+private struct FeedBoxscoreTeamEntry: Codable {
+    let battingOrder: [Int]?
+    let pitchers: [Int]?
 }
 
 private struct FeedPlays: Codable {

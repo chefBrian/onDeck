@@ -41,15 +41,20 @@ final class RosterManager {
                 }
 
                 let positions = Self.parsePositions(fp.positions)
+                let rosterStatus = Player.RosterStatus(rawValue: fp.statusId) ?? .active
 
                 if let existing = resolvedPlayers[mlbID] {
                     // Merge positions for two-way players (e.g., Ohtani)
                     let merged = existing.positions.union(positions)
+                    // Use the most active status when merging
+                    let bestStatus = existing.rosterStatus.rawValue < rosterStatus.rawValue
+                        ? existing.rosterStatus : rosterStatus
                     resolvedPlayers[mlbID] = Player(
                         id: mlbID,
                         name: existing.name,
                         team: existing.team,
-                        positions: merged
+                        positions: merged,
+                        rosterStatus: bestStatus
                     )
                 } else {
                     let teamName = TeamMapping.mlbTeamName(for: teamAbbr) ?? teamAbbr
@@ -57,7 +62,8 @@ final class RosterManager {
                         id: mlbID,
                         name: cleanedName,
                         team: teamName,
-                        positions: positions
+                        positions: positions,
+                        rosterStatus: rosterStatus
                     )
                 }
             }
@@ -95,7 +101,9 @@ final class RosterManager {
     // MARK: - Caching
 
     private func cacheRoster() {
-        let cached = players.map { CachedPlayer(id: $0.id, name: $0.name, team: $0.team, positions: $0.positions) }
+        let cached = players.map {
+            CachedPlayer(id: $0.id, name: $0.name, team: $0.team, positions: $0.positions, rosterStatus: $0.rosterStatus)
+        }
         if let data = try? JSONEncoder().encode(cached) {
             UserDefaults.standard.set(data, forKey: Self.cacheKey)
         }
@@ -104,7 +112,9 @@ final class RosterManager {
     private func loadCachedRoster() {
         guard let data = UserDefaults.standard.data(forKey: Self.cacheKey),
               let cached = try? JSONDecoder().decode([CachedPlayer].self, from: data) else { return }
-        players = cached.map { Player(id: $0.id, name: $0.name, team: $0.team, positions: $0.positions) }
+        players = cached.map {
+            Player(id: $0.id, name: $0.name, team: $0.team, positions: $0.positions, rosterStatus: $0.rosterStatus ?? .active)
+        }
     }
 
     private struct CachedPlayer: Codable {
@@ -112,5 +122,6 @@ final class RosterManager {
         let name: String
         let team: String
         let positions: Set<Player.PlayerPosition>
+        let rosterStatus: Player.RosterStatus?
     }
 }

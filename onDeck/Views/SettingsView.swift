@@ -77,6 +77,10 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Display") {
+                Toggle("Hide bench players", isOn: $appState.hideBenchPlayers)
+            }
+
             Section("Notifications") {
                 Toggle("Stepping up to bat", isOn: $notifyBatting)
                     .onChange(of: notifyBatting) { _, new in
