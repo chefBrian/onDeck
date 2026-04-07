@@ -62,6 +62,7 @@ final class AppState {
     }
 
     private var midnightTask: Task<Void, Never>?
+    private var hasStarted = false
 
     init() {
         gameMonitor.configure(stateManager: stateManager)
@@ -71,6 +72,9 @@ final class AppState {
     // MARK: - Lifecycle
 
     func start() async {
+        guard !hasStarted else { return }
+        hasStarted = true
+
         _ = await notificationManager.requestPermission()
 
         guard !rosterURL.isEmpty else { return }
