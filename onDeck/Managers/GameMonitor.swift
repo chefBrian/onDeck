@@ -18,6 +18,9 @@ final class GameMonitor {
     /// Stores the last completed play description per player (for result notifications).
     var lastPlayDescriptions: [Int: String] = [:] // playerID -> description
 
+    /// Latest feed data per game (for In Game player display).
+    var latestFeeds: [Int: LiveFeedData] = [:] // gamePk -> feed
+
     func configure(stateManager: StateManager) {
         self.stateManager = stateManager
     }
@@ -97,16 +100,29 @@ final class GameMonitor {
     // MARK: - Feed Processing
 
     private func processFeed(_ feed: LiveFeedData, gamePk: Int, game: Game) {
+        latestFeeds[gamePk] = feed
+
         guard feed.gameState == "Live" else {
             print("[GameMonitor] Game \(gamePk) state: \(feed.gameState) (skipping)")
             return
         }
 
+        let awayShort = game.awayTeam.split(separator: " ").last.map(String.init) ?? game.awayTeam
+        let homeShort = game.homeTeam.split(separator: " ").last.map(String.init) ?? game.homeTeam
+
         let gameContext = PlayerState.GameContext(
             gamePk: gamePk,
             inning: formatInning(feed),
-            score: formatScore(feed, game: game),
-            count: formatCount(feed)
+            homeTeam: homeShort,
+            awayTeam: awayShort,
+            homeScore: feed.homeScore,
+            awayScore: feed.awayScore,
+            balls: feed.balls,
+            strikes: feed.strikes,
+            outs: feed.outs,
+            runnerOnFirst: feed.runnerOnFirst,
+            runnerOnSecond: feed.runnerOnSecond,
+            runnerOnThird: feed.runnerOnThird
         )
 
         // Check current batter
@@ -172,16 +188,7 @@ final class GameMonitor {
 
     private func formatInning(_ feed: LiveFeedData) -> String {
         guard let inning = feed.inning, let half = feed.inningHalf else { return "" }
-        return "\(half) \(inning)"
-    }
-
-    private func formatScore(_ feed: LiveFeedData, game: Game) -> String {
-        let away = game.awayTeam.split(separator: " ").last.map(String.init) ?? game.awayTeam
-        let home = game.homeTeam.split(separator: " ").last.map(String.init) ?? game.homeTeam
-        return "\(away) \(feed.awayScore), \(home) \(feed.homeScore)"
-    }
-
-    private func formatCount(_ feed: LiveFeedData) -> String {
-        return "\(feed.balls)-\(feed.strikes), \(feed.outs) out\(feed.outs == 1 ? "" : "s")"
+        let shortHalf = half == "Top" ? "Top" : "Bot"
+        return "\(shortHalf) \(inning)"
     }
 }

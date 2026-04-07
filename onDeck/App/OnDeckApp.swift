@@ -11,6 +11,7 @@ struct OnDeckApp: App {
         } label: {
             Label(appState.menuBarTitle, systemImage: "baseball")
         }
+        .menuBarExtraStyle(.window)
 
         Settings {
             SettingsView(appState: appState)

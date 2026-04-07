@@ -72,6 +72,8 @@ struct MLBStatsAPI: Sendable {
         let currentPlay = response.liveData.plays?.currentPlay
         let linescore = response.liveData.linescore
 
+        let offense = linescore?.offense
+
         return LiveFeedData(
             gameState: response.gameData.status.abstractGameState,
             currentBatterID: currentPlay?.matchup.batter.id,
@@ -87,6 +89,9 @@ struct MLBStatsAPI: Sendable {
             balls: currentPlay?.count?.balls ?? 0,
             strikes: currentPlay?.count?.strikes ?? 0,
             outs: currentPlay?.count?.outs ?? 0,
+            runnerOnFirst: offense?.first != nil,
+            runnerOnSecond: offense?.second != nil,
+            runnerOnThird: offense?.third != nil,
             isPlayComplete: currentPlay?.about.isComplete ?? false,
             lastPlayEvent: currentPlay?.result?.event,
             lastPlayDescription: currentPlay?.result?.description
@@ -119,6 +124,9 @@ struct LiveFeedData: Sendable {
     let balls: Int
     let strikes: Int
     let outs: Int
+    let runnerOnFirst: Bool
+    let runnerOnSecond: Bool
+    let runnerOnThird: Bool
     let isPlayComplete: Bool
     let lastPlayEvent: String?
     let lastPlayDescription: String?
@@ -255,6 +263,18 @@ private struct FeedLinescore: Codable {
     let currentInning: Int?
     let inningHalf: String?
     let teams: FeedLinescoreTeams?
+    let offense: FeedOffense?
+}
+
+private struct FeedOffense: Codable {
+    let first: FeedRunner?
+    let second: FeedRunner?
+    let third: FeedRunner?
+}
+
+private struct FeedRunner: Codable {
+    let id: Int?
+    let fullName: String?
 }
 
 private struct FeedLinescoreTeams: Codable {

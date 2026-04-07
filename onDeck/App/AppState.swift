@@ -209,7 +209,7 @@ final class AppState {
             if case .active = oldState { wasActive = true } else { wasActive = false }
 
             if !wasActive {
-                let gameString = formatGameString(gamePk: context.gamePk)
+                let gameString = formatGameString(context: context)
                 if player.isPitcher && !player.isHitter {
                     print("[Notification] PITCHING: \(player.name) - \(gameString), \(context.inning)")
                     await notificationManager.notifyPitching(
@@ -250,11 +250,8 @@ final class AppState {
         }
     }
 
-    private func formatGameString(gamePk: Int) -> String {
-        guard let game = games.first(where: { $0.id == gamePk }) else { return "" }
-        let away = game.awayTeam.split(separator: " ").last.map(String.init) ?? game.awayTeam
-        let home = game.homeTeam.split(separator: " ").last.map(String.init) ?? game.homeTeam
-        return "\(away) vs \(home)"
+    private func formatGameString(context: PlayerState.GameContext) -> String {
+        return "\(context.awayTeam) \(context.awayScore) - \(context.homeTeam) \(context.homeScore)"
     }
 
     // MARK: - Daily Refresh (8 AM)

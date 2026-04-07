@@ -8,8 +8,16 @@ enum PlayerState {
     struct GameContext {
         let gamePk: Int
         let inning: String
-        let score: String
-        let count: String
+        let homeTeam: String
+        let awayTeam: String
+        let homeScore: Int
+        let awayScore: Int
+        let balls: Int
+        let strikes: Int
+        let outs: Int
+        let runnerOnFirst: Bool
+        let runnerOnSecond: Bool
+        let runnerOnThird: Bool
     }
 
     enum InactiveReason {
