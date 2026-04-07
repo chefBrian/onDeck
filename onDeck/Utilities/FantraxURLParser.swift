@@ -3,7 +3,7 @@ import Foundation
 enum FantraxURLParser {
     struct ParsedURL {
         let leagueID: String
-        let teamID: String
+        let teamID: String?
     }
 
     static func parse(_ urlString: String) -> ParsedURL? {
@@ -40,7 +40,7 @@ enum FantraxURLParser {
             }
         }
 
-        guard let leagueID, let teamID else { return nil }
+        guard let leagueID else { return nil }
         return ParsedURL(leagueID: leagueID, teamID: teamID)
     }
 }

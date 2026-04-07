@@ -17,19 +17,14 @@ final class RosterManager {
         loadCachedRoster()
     }
 
-    func syncRoster(from url: String) async {
-        guard let parsed = FantraxURLParser.parse(url) else {
-            error = "Invalid Fantrax URL. Expected format: fantrax.com/fantasy/league/.../team/roster;teamId=..."
-            return
-        }
-
+    func syncRoster(leagueID: String, teamID: String) async {
         isSyncing = true
         error = nil
 
         do {
             let fantraxPlayers = try await fantraxAPI.fetchRoster(
-                leagueID: parsed.leagueID,
-                teamID: parsed.teamID
+                leagueID: leagueID,
+                teamID: teamID
             )
 
             var resolvedPlayers: [Int: Player] = [:] // keyed by MLB ID for dedup
@@ -47,7 +42,7 @@ final class RosterManager {
 
                 let positions = Self.parsePositions(fp.positions)
 
-                if var existing = resolvedPlayers[mlbID] {
+                if let existing = resolvedPlayers[mlbID] {
                     // Merge positions for two-way players (e.g., Ohtani)
                     let merged = existing.positions.union(positions)
                     resolvedPlayers[mlbID] = Player(

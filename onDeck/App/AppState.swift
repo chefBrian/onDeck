@@ -15,12 +15,23 @@ final class AppState {
     let gameMonitor = GameMonitor()
     let stateManager = StateManager()
     private let notificationManager = NotificationManager.shared
+    private let fantraxAPI = FantraxAPI()
 
     // Settings
     var rosterURL: String {
         get { UserDefaults.standard.string(forKey: "rosterURL") ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: "rosterURL") }
     }
+
+    var selectedTeamID: String {
+        get { UserDefaults.standard.string(forKey: "selectedTeamID") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "selectedTeamID") }
+    }
+
+    // Team picker state
+    var availableTeams: [FantraxAPI.FantraxTeam] = []
+    var isLoadingTeams = false
+    var teamsError: String?
 
     var menuBarTitle: String {
         let names = activePlayers.map(\.name)
@@ -29,6 +40,24 @@ final class AppState {
         case 1...3: return names.joined(separator: " | ")
         default: return names.prefix(3).joined(separator: " | ") + " +\(names.count - 3)"
         }
+    }
+
+    /// The parsed leagueID from the current URL, if valid.
+    var parsedLeagueID: String? {
+        FantraxURLParser.parse(rosterURL)?.leagueID
+    }
+
+    /// Whether the URL already contains a teamId (no picker needed).
+    var urlHasTeamID: Bool {
+        FantraxURLParser.parse(rosterURL)?.teamID != nil
+    }
+
+    /// The effective teamID to use - from URL if available, otherwise from picker.
+    var effectiveTeamID: String? {
+        if let parsed = FantraxURLParser.parse(rosterURL), let teamID = parsed.teamID {
+            return teamID
+        }
+        return selectedTeamID.isEmpty ? nil : selectedTeamID
     }
 
     private var midnightTask: Task<Void, Never>?
@@ -41,35 +70,69 @@ final class AppState {
     // MARK: - Lifecycle
 
     func start() async {
-        // Request notification permission
         _ = await notificationManager.requestPermission()
 
-        // Sync roster if URL is set
         guard !rosterURL.isEmpty else { return }
-        await rosterManager.syncRoster(from: rosterURL)
 
-        // Fetch today's schedule
-        let teamNames = Set(rosterManager.players.map(\.team))
-        await scheduleManager.fetchSchedule(for: teamNames)
-        games = scheduleManager.todaysGames
-
-        // Set initial player states
-        initializePlayerStates()
-
-        // Start monitoring live games
-        if !games.isEmpty {
-            gameMonitor.startMonitoring(games: games, players: rosterManager.players)
+        // If URL has teamId, sync directly. Otherwise, fetch teams first.
+        if let parsed = FantraxURLParser.parse(rosterURL) {
+            if let teamID = parsed.teamID {
+                await rosterManager.syncRoster(leagueID: parsed.leagueID, teamID: teamID)
+            } else if !selectedTeamID.isEmpty {
+                await rosterManager.syncRoster(leagueID: parsed.leagueID, teamID: selectedTeamID)
+            } else {
+                // No team selected yet - fetch teams so user can pick
+                await fetchTeams()
+                return
+            }
+        } else {
+            return
         }
 
-        // Schedule midnight refresh
+        await fetchScheduleAndStartMonitoring()
         scheduleMidnightRefresh()
+    }
+
+    // MARK: - Team Fetching
+
+    func fetchTeams() async {
+        guard let leagueID = parsedLeagueID else {
+            teamsError = "Invalid Fantrax URL"
+            return
+        }
+
+        isLoadingTeams = true
+        teamsError = nil
+
+        do {
+            availableTeams = try await fantraxAPI.fetchTeams(leagueID: leagueID)
+            // If a team was previously selected and still exists, keep it
+            if !selectedTeamID.isEmpty && !availableTeams.contains(where: { $0.id == selectedTeamID }) {
+                selectedTeamID = ""
+            }
+        } catch {
+            teamsError = "Couldn't load teams: \(error.localizedDescription)"
+        }
+
+        isLoadingTeams = false
+    }
+
+    /// Called when user selects a team from the picker.
+    func selectTeam(_ teamID: String) async {
+        selectedTeamID = teamID
+        await resyncRoster()
     }
 
     /// Manually trigger a roster re-sync.
     func resyncRoster() async {
-        guard !rosterURL.isEmpty else { return }
-        await rosterManager.syncRoster(from: rosterURL)
+        guard let leagueID = parsedLeagueID,
+              let teamID = effectiveTeamID else { return }
 
+        await rosterManager.syncRoster(leagueID: leagueID, teamID: teamID)
+        await fetchScheduleAndStartMonitoring()
+    }
+
+    private func fetchScheduleAndStartMonitoring() async {
         let teamNames = Set(rosterManager.players.map(\.team))
         await scheduleManager.fetchSchedule(for: teamNames)
         games = scheduleManager.todaysGames
@@ -90,7 +153,6 @@ final class AppState {
             guard let self else { return }
             self.updatePlayerLists()
 
-            // Trigger notifications based on state transitions
             Task { @MainActor in
                 await self.handleStateTransition(
                     playerID: playerID,
@@ -113,7 +175,6 @@ final class AppState {
             )
         }
 
-        // Players without games today
         let allGamePlayerIDs = Set(stateManager.playerStates.keys)
         for player in rosterManager.players where !allGamePlayerIDs.contains(player.id) {
             stateManager.update(playerID: player.id, state: .inactive(reason: .dayOff))
@@ -150,7 +211,6 @@ final class AppState {
 
         switch (oldState, newState) {
         case (_, .active(let context)):
-            // Player became active - notify based on position
             let wasActive: Bool
             if case .active = oldState { wasActive = true } else { wasActive = false }
 
@@ -172,7 +232,6 @@ final class AppState {
             }
 
         case (.active, .upcoming):
-            // Batter's at-bat finished - check for result notification
             if let lastFeedResult = gameMonitor.lastPlayDescriptions[playerID] {
                 if player.isHitter {
                     await notificationManager.notifyAtBatResult(
@@ -183,7 +242,6 @@ final class AppState {
             }
 
         case (.active, .inactive(.substituted)):
-            // Player was pulled
             if player.isPitcher {
                 await notificationManager.notifyPitchingResult(
                     playerName: player.name,
@@ -221,7 +279,6 @@ final class AppState {
                 } catch {
                     return
                 }
-                // Day rolled over - refresh everything
                 await resyncRoster()
             }
         }
