@@ -6,7 +6,8 @@ final class GameMonitor {
     var isMonitoring = false
 
     private let mlbAPI = MLBStatsAPI()
-    private var pollingTasks: [Int: Task<Void, Never>] = [:] // keyed by gamePk
+    private var coordinatorTask: Task<Void, Never>?
+    private var monitoredGames: [Int: Game] = [:] // gamePk -> Game
     private var rosterPlayerIDs: Set<Int> = []
     private var rosterPlayers: [Int: Player] = [:]
     private weak var stateManager: StateManager?
@@ -35,6 +36,7 @@ final class GameMonitor {
 
         rosterPlayerIDs = Set(players.map(\.id))
         rosterPlayers = Dictionary(uniqueKeysWithValues: players.map { ($0.id, $0) })
+        monitoredGames = Dictionary(uniqueKeysWithValues: games.map { ($0.id, $0) })
         isMonitoring = true
 
         print("[GameMonitor] Starting monitoring for \(games.count) games")
@@ -44,19 +46,18 @@ final class GameMonitor {
         }
 
         for game in games {
-            let gamePk = game.id
-            print("[GameMonitor] Polling game \(gamePk): \(game.awayTeam) @ \(game.homeTeam)")
-            pollingTasks[gamePk] = Task { [weak self] in
-                await self?.pollGame(gamePk: gamePk, game: game)
-            }
+            print("[GameMonitor] Monitoring game \(game.id): \(game.awayTeam) @ \(game.homeTeam)")
+        }
+
+        coordinatorTask = Task { [weak self] in
+            await self?.coordinatePolling()
         }
     }
 
     func stopMonitoring() {
-        for task in pollingTasks.values {
-            task.cancel()
-        }
-        pollingTasks.removeAll()
+        coordinatorTask?.cancel()
+        coordinatorTask = nil
+        monitoredGames.removeAll()
         lastBatterID.removeAll()
         lastPitcherID.removeAll()
         lastHomePitcherID.removeAll()
@@ -67,53 +68,100 @@ final class GameMonitor {
 
     /// Stops monitoring a specific game (e.g., when no roster players remain).
     func stopMonitoring(gamePk: Int) {
-        pollingTasks[gamePk]?.cancel()
-        pollingTasks.removeValue(forKey: gamePk)
-        if pollingTasks.isEmpty {
+        monitoredGames.removeValue(forKey: gamePk)
+        if monitoredGames.isEmpty {
+            coordinatorTask?.cancel()
+            coordinatorTask = nil
             isMonitoring = false
         }
     }
 
-    // MARK: - Polling Loop
+    // MARK: - Centralized Polling
 
-    private func pollGame(gamePk: Int, game: Game) async {
-        // Wait until 15 minutes before game start
-        let pollStart = game.startTime.addingTimeInterval(-15 * 60)
+    private func coordinatePolling() async {
+        // Wait until the earliest game is within 15 minutes of starting
+        let earliestStart = monitoredGames.values.map(\.startTime).min() ?? .now
+        let pollStart = earliestStart.addingTimeInterval(-15 * 60)
         let delay = pollStart.timeIntervalSinceNow
         if delay > 0 {
-            print("[GameMonitor] Game \(gamePk) starts at \(game.startTime) - sleeping until \(pollStart)")
+            print("[GameMonitor] Earliest game at \(earliestStart) - sleeping until \(pollStart)")
             do {
                 try await Task.sleep(for: .seconds(delay))
             } catch {
-                return // Task cancelled
+                return
             }
-            print("[GameMonitor] Game \(gamePk) - waking up, starting poll loop")
+            print("[GameMonitor] Waking up, starting coordinator loop")
         }
 
-        while !Task.isCancelled {
-            do {
-                let feed = try await mlbAPI.fetchLiveFeed(gamePk: gamePk)
-                processFeed(feed, gamePk: gamePk, game: game)
+        var lastCheck = Date.now
 
-                // Stop polling if game is over
-                if feed.gameState == "Final" {
-                    let playerIDsInGame = rosterPlayerIDs.filter { id in
-                        isPlayerInGame(playerID: id, game: game)
-                    }
-                    print("[GameMonitor] Game \(gamePk) is Final - marking done: \(playerIDsInGame)")
-                    stateManager?.setGameOver(playerIDs: Array(playerIDsInGame), gamePk: gamePk)
-                    stopMonitoring(gamePk: gamePk)
-                    return
-                }
-            } catch {
-                // Log error but keep polling
-                print("Live feed error for game \(gamePk): \(error)")
-            }
+        while !Task.isCancelled {
+            await pollCycle(lastCheck: lastCheck)
+            lastCheck = Date.now
 
             do {
                 try await Task.sleep(for: .seconds(5))
             } catch {
-                return // Task cancelled
+                return
+            }
+        }
+    }
+
+    private func pollCycle(lastCheck: Date) async {
+        let activeGamePks = monitoredGames.keys.filter { gamePk in
+            guard let game = monitoredGames[gamePk] else { return false }
+            // Only poll games within 15 minutes of start or already started
+            return game.startTime.addingTimeInterval(-15 * 60) <= Date.now
+        }
+
+        guard !activeGamePks.isEmpty else { return }
+
+        // Ask which games have updated since our last check
+        let changedGamePks: Set<Int>
+        do {
+            changedGamePks = try await mlbAPI.fetchGameChanges(since: lastCheck)
+        } catch {
+            // Changes endpoint failed - fall back to fetching all active games
+            print("[GameMonitor] /game/changes error: \(error) - fetching all active games")
+            await fetchFeeds(for: activeGamePks)
+            return
+        }
+
+        // Only fetch feeds for games we're monitoring AND that have changed
+        let gamesToFetch = activeGamePks.filter { changedGamePks.contains($0) }
+
+        if gamesToFetch.isEmpty {
+            print("[GameMonitor] No changes for monitored games (checked \(activeGamePks.count) games)")
+        } else {
+            print("[GameMonitor] \(gamesToFetch.count)/\(activeGamePks.count) games have updates")
+            await fetchFeeds(for: gamesToFetch)
+        }
+    }
+
+    private func fetchFeeds(for gamePks: [Int]) async {
+        await withTaskGroup(of: Void.self) { group in
+            for gamePk in gamePks {
+                guard let game = monitoredGames[gamePk] else { continue }
+                group.addTask { [weak self] in
+                    guard let self else { return }
+                    do {
+                        let feed = try await self.mlbAPI.fetchLiveFeed(gamePk: gamePk)
+                        await MainActor.run {
+                            self.processFeed(feed, gamePk: gamePk, game: game)
+
+                            if feed.gameState == "Final" {
+                                let playerIDsInGame = self.rosterPlayerIDs.filter { id in
+                                    self.isPlayerInGame(playerID: id, game: game)
+                                }
+                                print("[GameMonitor] Game \(gamePk) is Final - marking done: \(playerIDsInGame)")
+                                self.stateManager?.setGameOver(playerIDs: Array(playerIDsInGame), gamePk: gamePk)
+                                self.stopMonitoring(gamePk: gamePk)
+                            }
+                        }
+                    } catch {
+                        print("[GameMonitor] Live feed error for game \(gamePk): \(error)")
+                    }
+                }
             }
         }
     }
