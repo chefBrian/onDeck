@@ -376,6 +376,21 @@ struct MenuRowButtonStyle: ButtonStyle {
     }
 }
 
+// MARK: - Footer Button Style
+
+struct FooterButtonStyle: ButtonStyle {
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isHovered ? .white.opacity(0.1) : .clear)
+            )
+            .onHover { isHovered = $0 }
+    }
+}
+
 // MARK: - Bases Diamond
 
 struct BasesDiagram: View {
@@ -486,50 +501,61 @@ struct FooterButtons: View {
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
-        HStack(spacing: 12) {
-            Button {
+        HStack(spacing: 0) {
+            footerButton(systemIcon: "gear", label: "Settings") {
                 dismissMenu()
                 NSApplication.shared.activate()
                 openSettings()
-            } label: {
-                Label("Settings", systemImage: "gear")
             }
             if let leagueID = appState.parsedLeagueID {
-                Button {
+                footerButton(assetIcon: "FantraxIcon", label: "Fantrax") {
                     dismissMenu()
                     if let url = URL(string: "https://www.fantrax.com/fantasy/league/\(leagueID)/home") {
                         NSWorkspace.shared.open(url)
                     }
-                } label: {
-                    Label("Fantrax", systemImage: "trophy")
                 }
             }
-            Button {
+            footerButton(assetIcon: "GitHubIcon", label: "GitHub") {
                 dismissMenu()
                 if let url = URL(string: "https://github.com/chefBrian/onDeck") {
                     NSWorkspace.shared.open(url)
                 }
-            } label: {
-                Label("GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
             }
-            Button {
+            footerButton(systemIcon: FloatingPanel.shared.isShowing ? "pip.exit" : "pip.enter", label: "Float") {
                 dismissMenu()
                 FloatingPanel.shared.toggle(appState: appState)
-            } label: {
-                Image(systemName: FloatingPanel.shared.isShowing ? "pip.exit" : "pip.enter")
             }
             Spacer()
-            Button {
+            footerButton(systemIcon: "power", label: "Quit") {
                 NSApplication.shared.terminate(nil)
-            } label: {
-                Label("Quit", systemImage: "power")
             }
         }
-        .buttonStyle(MenuRowButtonStyle())
-        .foregroundStyle(.secondary)
-        .font(.caption)
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.top, 2)
+        .padding(.bottom, 6)
+    }
+
+    private func footerButton(systemIcon: String, label: String, action: @escaping () -> Void) -> some View {
+        footerButtonView(icon: Image(systemName: systemIcon).font(.system(size: 16)), label: label, action: action)
+    }
+
+    private func footerButton(assetIcon: String, label: String, action: @escaping () -> Void) -> some View {
+        footerButtonView(icon: Image(assetIcon).resizable().aspectRatio(contentMode: .fit).frame(width: 16, height: 16), label: label, action: action)
+    }
+
+    private func footerButtonView<I: View>(icon: I, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                icon.frame(width: 24, height: 20, alignment: .center)
+                Text(label)
+                    .font(.system(size: 10))
+                    .fixedSize()
+            }
+            .frame(width: 52, height: 42)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(FooterButtonStyle())
+        .foregroundStyle(.secondary)
     }
 
     private func dismissMenu() {
