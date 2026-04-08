@@ -50,7 +50,16 @@ struct FantraxAPI: Sendable {
     // MARK: - Fetch Roster
 
     func fetchRoster(leagueID: String, teamID: String) async throws -> [FantraxPlayer] {
-        let json = try await postRequest(leagueID: leagueID, method: "getTeamRosterInfo", data: ["leagueId": leagueID, "teamId": teamID])
+        // First call to discover today's period, then re-fetch with that period
+        let initialJSON = try await postRequest(leagueID: leagueID, method: "getTeamRosterInfo", data: ["leagueId": leagueID, "teamId": teamID])
+        let todayPeriod = Self.findTodayPeriod(in: initialJSON)
+
+        let json: [String: Any]
+        if let period = todayPeriod {
+            json = try await postRequest(leagueID: leagueID, method: "getTeamRosterInfo", data: ["leagueId": leagueID, "teamId": teamID, "period": period])
+        } else {
+            json = initialJSON
+        }
 
         // Navigate to responses[0].data.tables and extract the top-level .scorer
         // from each row. Don't recurse into cells - they contain opposing pitcher popovers.
@@ -81,6 +90,40 @@ struct FantraxAPI: Sendable {
         }
 
         return players
+    }
+
+    // MARK: - Period Detection
+
+    /// Parses periodList from the API response to find today's period number.
+    /// Entries look like "14 (Tue Apr 7)". Uses baseball day (before 8 AM = yesterday).
+    private static func findTodayPeriod(in json: [String: Any]) -> String? {
+        guard let responses = json["responses"] as? [[String: Any]],
+              let data = responses.first?["data"] as? [String: Any],
+              let lists = data["displayedLists"] as? [String: Any],
+              let periodList = lists["periodList"] as? [String] else { return nil }
+
+        let target = ScheduleManager.baseballDate()
+        let calendar = Calendar.current
+        let targetMonth = calendar.component(.month, from: target)
+        let targetDay = calendar.component(.day, from: target)
+
+        let monthAbbreviations = [1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
+                                  7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"]
+        guard let monthStr = monthAbbreviations[targetMonth] else { return nil }
+
+        // Match "14 (Tue Apr 7)" - look for "Mon D)" or "Mon DD)"
+        let suffix1 = "\(monthStr) \(targetDay))"
+        for entry in periodList {
+            if entry.contains(suffix1) {
+                // Extract the period number (everything before the first space)
+                if let spaceIdx = entry.firstIndex(of: " ") {
+                    let period = String(entry[entry.startIndex..<spaceIdx])
+                    return period
+                }
+            }
+        }
+
+        return nil
     }
 
     // MARK: - Network

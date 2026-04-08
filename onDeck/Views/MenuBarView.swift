@@ -61,10 +61,14 @@ struct MenuBarView: View {
 
     @ViewBuilder
     private var doneSection: some View {
-        if !appState.donePlayers.isEmpty {
+        let played = appState.donePlayers.filter { player in
+            guard let gamePk = doneGamePk(for: player) else { return true }
+            return statLine(for: player, gamePk: gamePk) != nil
+        }
+        if !played.isEmpty {
             let showClose = appState.activePlayers.isEmpty && appState.inGamePlayers.isEmpty && appState.upcomingPlayers.isEmpty
             sectionHeader("Done", showClose: showClose)
-            ForEach(appState.donePlayers) { player in
+            ForEach(played) { player in
                 donePlayerRow(player)
             }
             if isFloating {
@@ -218,7 +222,7 @@ struct MenuBarView: View {
                                     .padding(.leading, isActive ? 10 : 0)
                             }
                         }
-                        Spacer()
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         HStack(alignment: .center, spacing: 5) {
                             VStack(spacing: -3) {
                                 BasesDiagram(
@@ -241,6 +245,7 @@ struct MenuBarView: View {
                                 OutsIndicator(outs: feed.outs)
                             }
                         }
+                        .fixedSize()
                         scoreBlock(
                             awayTeamID: feed.awayTeamID, awayScore: feed.awayScore,
                             homeTeamID: feed.homeTeamID, homeScore: feed.homeScore

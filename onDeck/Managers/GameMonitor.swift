@@ -84,10 +84,10 @@ final class GameMonitor {
 
                 // Stop polling if game is over
                 if feed.gameState == "Final" {
-                    print("[GameMonitor] Game \(gamePk) is Final - marking players done")
                     let playerIDsInGame = rosterPlayerIDs.filter { id in
                         isPlayerInGame(playerID: id, game: game)
                     }
+                    print("[GameMonitor] Game \(gamePk) is Final - marking done: \(playerIDsInGame)")
                     stateManager?.setGameOver(playerIDs: Array(playerIDsInGame), gamePk: gamePk)
                     stopMonitoring(gamePk: gamePk)
                     return
