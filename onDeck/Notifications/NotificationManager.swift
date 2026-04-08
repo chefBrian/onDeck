@@ -41,7 +41,7 @@ final class NotificationManager: Sendable {
         }
     }
 
-    func send(title: String, body: String, identifier: String? = nil, streamURL: URL? = nil) async {
+    func send(title: String, body: String, identifier: String? = nil, playerID: Int? = nil, streamURL: URL? = nil) async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         guard settings.authorizationStatus == .authorized else {
             print("[Notifications] Not authorized (status: \(settings.authorizationStatus.rawValue))")
@@ -54,6 +54,11 @@ final class NotificationManager: Sendable {
         content.sound = .default
         if let streamURL {
             content.userInfo["streamURL"] = streamURL.absoluteString
+        }
+        if let playerID, let imageURL = await HeadshotCache.shared.fileURL(for: playerID) {
+            if let attachment = try? UNNotificationAttachment(identifier: "headshot", url: imageURL) {
+                content.attachments = [attachment]
+            }
         }
 
         let id = identifier ?? UUID().uuidString
@@ -69,38 +74,42 @@ final class NotificationManager: Sendable {
 
     // MARK: - Typed Notifications
 
-    func notifyBatting(playerName: String, game: String, inning: String, streamURL: URL?) async {
+    func notifyBatting(playerName: String, playerID: Int, game: String, inning: String, streamURL: URL?) async {
         guard UserDefaults.standard.bool(forKey: "notifyBatting", default: true) else { return }
         await send(
             title: "\(playerName) is batting",
             body: "\(game), \(inning)",
+            playerID: playerID,
             streamURL: streamURL
         )
     }
 
-    func notifyPitching(playerName: String, game: String, inning: String, streamURL: URL?) async {
+    func notifyPitching(playerName: String, playerID: Int, game: String, inning: String, streamURL: URL?) async {
         guard UserDefaults.standard.bool(forKey: "notifyPitching", default: true) else { return }
         await send(
             title: "\(playerName) is taking the mound",
             body: "\(game), \(inning)",
+            playerID: playerID,
             streamURL: streamURL
         )
     }
 
-    func notifyAtBatResult(playerName: String, description: String, streamURL: URL?) async {
+    func notifyAtBatResult(playerName: String, playerID: Int, description: String, streamURL: URL?) async {
         guard UserDefaults.standard.bool(forKey: "notifyAtBatResult", default: true) else { return }
         await send(
             title: "\(playerName)",
             body: description,
+            playerID: playerID,
             streamURL: streamURL
         )
     }
 
-    func notifyPitchingResult(playerName: String, description: String, streamURL: URL?) async {
+    func notifyPitchingResult(playerName: String, playerID: Int, description: String, streamURL: URL?) async {
         guard UserDefaults.standard.bool(forKey: "notifyPitchingResult", default: true) else { return }
         await send(
             title: "\(playerName)",
             body: description,
+            playerID: playerID,
             streamURL: streamURL
         )
     }

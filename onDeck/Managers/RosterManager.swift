@@ -85,6 +85,7 @@ final class RosterManager {
             players = Array(resolvedPlayers.values).sorted { $0.name < $1.name }
             lastSyncDate = Date()
             cacheRoster()
+            await HeadshotCache.shared.prefetch(playerIDs: players.map(\.id))
         } catch {
             self.error = "Roster sync failed: \(error.localizedDescription)"
             // Keep last cached roster if available
@@ -129,6 +130,7 @@ final class RosterManager {
         players = cached.map {
             Player(id: $0.id, name: $0.name, team: $0.team, positions: $0.positions, fantraxPositions: $0.fantraxPositions ?? [], rosterStatus: $0.rosterStatus ?? .active)
         }
+        Task { await HeadshotCache.shared.prefetch(playerIDs: players.map(\.id)) }
     }
 
     private struct CachedPlayer: Codable {

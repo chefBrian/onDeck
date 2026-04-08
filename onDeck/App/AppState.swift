@@ -295,6 +295,7 @@ final class AppState {
                     print("[Notification] PITCHING: \(player.name) - \(gameString), \(context.inning)")
                     await notificationManager.notifyPitching(
                         playerName: player.name,
+                        playerID: player.id,
                         game: gameString,
                         inning: context.inning,
                         streamURL: streamURL
@@ -303,6 +304,7 @@ final class AppState {
                     print("[Notification] BATTING: \(player.name) - \(gameString), \(context.inning)")
                     await notificationManager.notifyBatting(
                         playerName: player.name,
+                        playerID: player.id,
                         game: gameString,
                         inning: context.inning,
                         streamURL: streamURL
@@ -314,6 +316,7 @@ final class AppState {
             if context.role == .batting, let lastFeedResult = gameMonitor.lastPlayDescriptions[playerID] {
                 await notificationManager.notifyAtBatResult(
                     playerName: player.name,
+                    playerID: player.id,
                     description: lastFeedResult,
                     streamURL: streamURL(for: context.gamePk)
                 )
@@ -323,6 +326,7 @@ final class AppState {
             if context.role == .pitching {
                 await notificationManager.notifyPitchingResult(
                     playerName: player.name,
+                    playerID: player.id,
                     description: "\(player.name) has been pulled from the game",
                     streamURL: streamURL(for: context.gamePk)
                 )
