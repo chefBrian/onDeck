@@ -6,7 +6,7 @@ A macOS menu bar app that monitors live MLB games and sends notifications when y
 
 ## Features
 
-- **Live game tracking** - Monitors active MLB games via WebSocket with REST polling fallback
+- **Live game tracking** - Monitors active MLB games via REST polling (every 5s)
 - **At-bat notifications** - Get alerted when your player steps up to bat or takes the mound
 - **Result notifications** - See at-bat and pitching results as they happen
 - **Menu bar scoreboard** - Live scores, count, bases, outs, and inning for each player's game
@@ -23,9 +23,7 @@ A macOS menu bar app that monitors live MLB games and sends notifications when y
 3. Click the menu bar icon and open **Settings**
 4. Paste your Fantrax league URL and select your team
 
-The app accepts Fantrax URLs in these formats:
-- `https://www.fantrax.com/fantasy/league/.../players;teamId=...` (team auto-detected)
-- `https://www.fantrax.com/fantasy/league/.../players` (team picker shown)
+Paste any Fantrax league URL and select your team.
 
 ## Requirements
 
@@ -38,6 +36,6 @@ The app accepts Fantrax URLs in these formats:
 - Swift 6 / SwiftUI
 - MenuBarExtra for the menu bar interface
 - `@Observable` + Swift concurrency
-- MLB Stats API (WebSocket + REST)
+- MLB Stats API (REST polling)
 - Fantrax web scraping for roster data
 - UserNotifications for alerts
