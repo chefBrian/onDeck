@@ -125,6 +125,7 @@ struct MenuBarView: View {
                 .textCase(.uppercase)
             Spacer()
             if showClose && isFloating {
+                FloatingRefreshButton(appState: appState)
                 Button {
                     FloatingPanel.shared.close()
                 } label: {
@@ -610,6 +611,58 @@ struct FooterButtons: View {
                 NSApp.deactivate()
             }
         }
+    }
+}
+
+// MARK: - Floating Refresh Button
+
+private struct FloatingRefreshButton: View {
+    let appState: AppState
+    @State private var state: RefreshState = .idle
+
+    private enum RefreshState {
+        case idle, spinning, done, failed
+    }
+
+    var body: some View {
+        Button {
+            guard state == .idle else { return }
+            state = .spinning
+            Task {
+                let success = await appState.resyncRoster()
+                state = success ? .done : .failed
+                try? await Task.sleep(for: .seconds(1.2))
+                state = .idle
+            }
+        } label: {
+            ZStack {
+                if state == .spinning {
+                    ProgressView()
+                        .scaleEffect(0.35)
+                        .transition(.opacity)
+                } else if state == .done {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.secondary)
+                        .transition(.opacity)
+                } else if state == .failed {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.red)
+                        .transition(.opacity)
+                } else {
+                    Image(systemName: "arrow.clockwise.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.secondary)
+                        .transition(.opacity)
+                }
+            }
+            .frame(width: 14, height: 14)
+            .animation(.easeInOut(duration: 0.3), value: state == .idle)
+            .animation(.easeInOut(duration: 0.3), value: state == .done)
+            .animation(.easeInOut(duration: 0.3), value: state == .failed)
+        }
+        .buttonStyle(.plain)
     }
 }
 
