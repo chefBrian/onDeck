@@ -14,6 +14,11 @@ final class StateManager {
         onStateChange?(playerID, oldState, state)
     }
 
+    func startTime(for playerID: Int) -> Date? {
+        if case .upcoming(let time) = playerStates[playerID] { return time }
+        return nil
+    }
+
     /// Sets all players to upcoming with a given start time (used when schedule is fetched).
     func setUpcoming(playerIDs: [Int], startTime: Date) {
         for id in playerIDs {

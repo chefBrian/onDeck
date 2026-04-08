@@ -229,7 +229,12 @@ final class AppState {
 
         activePlayers = active
         inGamePlayers = inGame
-        upcomingPlayers = upcoming
+        upcomingPlayers = upcoming.sorted { a, b in
+            let timeA = stateManager.startTime(for: a.id) ?? .distantFuture
+            let timeB = stateManager.startTime(for: b.id) ?? .distantFuture
+            if timeA != timeB { return timeA < timeB }
+            return a.name < b.name
+        }
         donePlayers = done.sorted { a, b in
             if a.isHitter != b.isHitter { return a.isHitter }
             return false
