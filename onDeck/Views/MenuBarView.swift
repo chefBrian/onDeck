@@ -564,32 +564,28 @@ struct FooterButtons: View {
             refreshState = .spinning
             Task {
                 await appState.resyncRoster()
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    refreshState = .done
-                }
+                refreshState = .done
                 try? await Task.sleep(for: .seconds(1.2))
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    refreshState = .idle
-                }
+                refreshState = .idle
             }
         } label: {
             VStack(spacing: 3) {
                 ZStack {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 16))
-                        .rotationEffect(.degrees(refreshState == .spinning ? 360 : 0))
-                        .animation(
-                            refreshState == .spinning
-                                ? .linear(duration: 0.8).repeatForever(autoreverses: false)
-                                : .default,
-                            value: refreshState == .spinning
-                        )
-                        .opacity(refreshState == .done ? 0 : 1)
-
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 16, weight: .semibold))
-                        .opacity(refreshState == .done ? 1 : 0)
+                    if refreshState == .spinning {
+                        ProgressView()
+                            .scaleEffect(0.5)
+                            .transition(.opacity)
+                    } else if refreshState == .done {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 16, weight: .semibold))
+                            .transition(.opacity)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 16))
+                            .transition(.opacity)
+                    }
                 }
+                .animation(.easeInOut(duration: 0.3), value: refreshState)
                 .frame(width: 24, height: 20, alignment: .center)
                 Text("Refresh")
                     .font(.system(size: 10))
