@@ -729,8 +729,7 @@ final class FloatingPanel {
 
     private func show(appState: AppState) {
         let content = MenuBarView(appState: appState, isFloating: true)
-            .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .glassEffect(in: .rect(cornerRadius: 12))
 
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 300, height: 500),
