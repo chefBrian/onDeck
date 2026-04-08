@@ -92,7 +92,7 @@ final class GameMonitor {
         if delay > 0 {
             print("[GameMonitor] Earliest game at \(earliestStart) - sleeping until \(pollStart)")
             do {
-                try await Task.sleep(for: .seconds(delay))
+                try await Task.sleep(for: .seconds(delay), tolerance: .seconds(30))
             } catch {
                 return
             }
@@ -103,7 +103,7 @@ final class GameMonitor {
             await pollCycle()
 
             do {
-                try await Task.sleep(for: .seconds(10))
+                try await Task.sleep(for: .seconds(10), tolerance: .seconds(2))
             } catch {
                 return
             }
@@ -132,11 +132,12 @@ final class GameMonitor {
     }
 
     private func pollSingleGame(gamePk: Int, game: Game, cachedData: Data?, timecode: String?) async {
+        let label = "\(TeamMapping.abbreviation(for: game.awayTeam))@\(TeamMapping.abbreviation(for: game.homeTeam))"
         do {
             let feed: LiveFeedData
 
             if let cachedData, let timecode {
-                let result = try await mlbAPI.fetchDiffPatch(gamePk: gamePk, since: timecode)
+                let result = try await mlbAPI.fetchDiffPatch(gamePk: gamePk, since: timecode, label: label)
 
                 switch result {
                 case .noChanges:
@@ -151,17 +152,17 @@ final class GameMonitor {
                     cachedFeedData[gamePk] = newData
                     if let newTimecode { cachedTimecodes[gamePk] = newTimecode }
 
-                case .fullUpdate:
-                    // Temporary - API returns full state during certain game phases
-                    // Fetch clean /feed/live for reliable timecode, patches should resume next cycle
-                    let (decoded, rawData, newTimecode) = try await mlbAPI.fetchLiveFeedRaw(gamePk: gamePk)
+                case .fullUpdate(let rawData):
+                    // API returns full feed during game phase transitions (inning changes, etc.)
+                    // Decode directly instead of re-fetching - patches resume next cycle
+                    let (decoded, newTimecode) = try MLBStatsAPI.decodeLiveFeed(from: rawData)
                     feed = decoded
                     cachedFeedData[gamePk] = rawData
                     if let newTimecode { cachedTimecodes[gamePk] = newTimecode }
                 }
             } else {
                 // No cache - full fetch
-                let (decoded, rawData, newTimecode) = try await mlbAPI.fetchLiveFeedRaw(gamePk: gamePk)
+                let (decoded, rawData, newTimecode) = try await mlbAPI.fetchLiveFeedRaw(gamePk: gamePk, label: label)
                 feed = decoded
                 cachedFeedData[gamePk] = rawData
                 if let newTimecode { cachedTimecodes[gamePk] = newTimecode }
@@ -204,43 +205,49 @@ final class GameMonitor {
         let awayShort = game.awayTeam.split(separator: " ").last.map(String.init) ?? game.awayTeam
         let homeShort = game.homeTeam.split(separator: " ").last.map(String.init) ?? game.homeTeam
 
-        let gameContext = PlayerState.GameContext(
-            gamePk: gamePk,
-            inning: formatInning(feed),
-            homeTeam: homeShort,
-            awayTeam: awayShort,
-            homeTeamID: feed.homeTeamID,
-            awayTeamID: feed.awayTeamID,
-            homeScore: feed.homeScore,
-            awayScore: feed.awayScore,
-            balls: feed.balls,
-            strikes: feed.strikes,
-            outs: feed.outs,
-            runnerOnFirst: feed.runnerOnFirst,
-            runnerOnSecond: feed.runnerOnSecond,
-            runnerOnThird: feed.runnerOnThird
+        let inning = formatInning(feed)
+        let sharedFields = (
+            gamePk: gamePk, inning: inning,
+            homeTeam: homeShort, awayTeam: awayShort,
+            homeTeamID: feed.homeTeamID, awayTeamID: feed.awayTeamID,
+            homeScore: feed.homeScore, awayScore: feed.awayScore,
+            balls: feed.balls, strikes: feed.strikes, outs: feed.outs,
+            runnerOnFirst: feed.runnerOnFirst, runnerOnSecond: feed.runnerOnSecond, runnerOnThird: feed.runnerOnThird
         )
 
-        // Check current batter
+        func makeContext(role: PlayerState.ActiveRole) -> PlayerState.GameContext {
+            PlayerState.GameContext(
+                gamePk: sharedFields.gamePk, role: role, inning: sharedFields.inning,
+                homeTeam: sharedFields.homeTeam, awayTeam: sharedFields.awayTeam,
+                homeTeamID: sharedFields.homeTeamID, awayTeamID: sharedFields.awayTeamID,
+                homeScore: sharedFields.homeScore, awayScore: sharedFields.awayScore,
+                balls: sharedFields.balls, strikes: sharedFields.strikes, outs: sharedFields.outs,
+                runnerOnFirst: sharedFields.runnerOnFirst, runnerOnSecond: sharedFields.runnerOnSecond,
+                runnerOnThird: sharedFields.runnerOnThird
+            )
+        }
+
+        // Check current batter - only track if rostered as hitter
         if let batterID = feed.currentBatterID {
-            if rosterPlayerIDs.contains(batterID) {
+            if let player = rosterPlayers[batterID], player.isHitter {
                 let isNew = lastBatterID[gamePk] != batterID
-                print("[GameMonitor] >>> ROSTER BATTER: \(feed.currentBatterName ?? "?") (ID \(batterID)) - \(isNew ? "NEW" : "same") - \(formatInning(feed))")
-                stateManager?.update(playerID: batterID, state: .active(gameContext))
-            } else {
-                // Only log occasionally to reduce noise
-                if lastBatterID[gamePk] != batterID {
+                print("[GameMonitor] >>> ROSTER BATTER: \(feed.currentBatterName ?? "?") (ID \(batterID)) - \(isNew ? "NEW" : "same") - \(inning)")
+                stateManager?.update(playerID: batterID, state: .active(makeContext(role: .batting)))
+            } else if lastBatterID[gamePk] != batterID {
+                if rosterPlayerIDs.contains(batterID) {
+                    print("[GameMonitor] Batter \(feed.currentBatterName ?? "?") (ID \(batterID)) on roster as pitcher-only, skipping")
+                } else {
                     print("[GameMonitor] Batter \(feed.currentBatterName ?? "?") (ID \(batterID)) not on roster")
                 }
             }
         }
 
-        // Check current pitcher
+        // Check current pitcher - only track if rostered as pitcher
         if let pitcherID = feed.currentPitcherID {
-            if rosterPlayerIDs.contains(pitcherID) {
+            if let player = rosterPlayers[pitcherID], player.isPitcher {
                 let isNew = lastPitcherID[gamePk] != pitcherID
-                print("[GameMonitor] >>> ROSTER PITCHER: \(feed.currentPitcherName ?? "?") (ID \(pitcherID)) - \(isNew ? "NEW" : "same") - \(formatInning(feed))")
-                stateManager?.update(playerID: pitcherID, state: .active(gameContext))
+                print("[GameMonitor] >>> ROSTER PITCHER: \(feed.currentPitcherName ?? "?") (ID \(pitcherID)) - \(isNew ? "NEW" : "same") - \(inning)")
+                stateManager?.update(playerID: pitcherID, state: .active(makeContext(role: .pitching)))
             }
         }
 

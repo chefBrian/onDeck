@@ -41,6 +41,30 @@ enum TeamMapping {
         fantraxToMLB[fantraxAbbreviation.uppercased()]
     }
 
+    /// Reverse lookup: MLB full name to shortest abbreviation.
+    private static let mlbToAbbreviation: [String: String] = {
+        var map: [String: String] = [:]
+        for (abbrev, name) in fantraxToMLB {
+            if let existing = map[name] {
+                // Keep the shorter abbreviation (e.g., "KC" over "KCR")
+                if abbrev.count < existing.count { map[name] = abbrev }
+            } else {
+                map[name] = abbrev
+            }
+        }
+        return map
+    }()
+
+    /// Returns a short abbreviation for an MLB full team name, or the last word as fallback.
+    static func abbreviation(for mlbTeamName: String) -> String {
+        if let abbrev = mlbToAbbreviation[mlbTeamName] { return abbrev }
+        // Partial match fallback
+        for (name, abbrev) in mlbToAbbreviation {
+            if mlbTeamName.contains(name) { return abbrev }
+        }
+        return mlbTeamName.split(separator: " ").last.map(String.init) ?? mlbTeamName
+    }
+
     /// Checks if an MLB API team name matches a Fantrax abbreviation.
     /// Handles partial matches (e.g., "Athletics" matches "Sacramento Athletics").
     static func matches(mlbTeamName: String, fantraxAbbreviation: String) -> Bool {

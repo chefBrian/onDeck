@@ -71,10 +71,11 @@ struct MLBStatsAPI: Sendable {
     // MARK: - Live Feed
 
     /// Fetches the full live feed and returns parsed data + raw bytes + timecode for caching.
-    func fetchLiveFeedRaw(gamePk: Int) async throws -> (feed: LiveFeedData, rawData: Data, timecode: String?) {
+    func fetchLiveFeedRaw(gamePk: Int, label: String? = nil) async throws -> (feed: LiveFeedData, rawData: Data, timecode: String?) {
         let url = URL(string: "https://statsapi.mlb.com/api/v1.1/game/\(gamePk)/feed/live")!
         let (data, _) = try await URLSession.shared.data(from: url)
-        print("[MLB API] GET /feed/live game=\(gamePk) \(Self.formatBytes(data.count))")
+        let tag = label.map { " \($0)" } ?? ""
+        print("[MLB API] GET /feed/live game=\(gamePk)\(tag) \(Self.formatBytes(data.count))")
         let (feed, timecode) = try Self.decodeLiveFeed(from: data)
         return (feed, data, timecode)
     }
@@ -88,26 +89,27 @@ struct MLBStatsAPI: Sendable {
     // MARK: - Diff Patch
 
     /// Fetches diff patches for a game since a given timecode.
-    func fetchDiffPatch(gamePk: Int, since timecode: String) async throws -> DiffPatchResult {
+    func fetchDiffPatch(gamePk: Int, since timecode: String, label: String? = nil) async throws -> DiffPatchResult {
         let now = Self.currentTimecode()
         let url = URL(string: "https://statsapi.mlb.com/api/v1.1/game/\(gamePk)/feed/live/diffPatch?startTimecode=\(timecode)&endTimecode=\(now)")!
         let (data, _) = try await URLSession.shared.data(from: url)
+        let tag = label.map { " \($0)" } ?? ""
 
         let parsed = try JSONSerialization.jsonObject(with: data)
 
         // API sometimes returns a single feed object (dict) instead of an array
         if parsed is [String: Any] {
-            print("[MLB API] GET /diffPatch game=\(gamePk) \(Self.formatBytes(data.count)) full update")
+            print("[MLB API] GET /diffPatch game=\(gamePk)\(tag) \(Self.formatBytes(data.count)) full update")
             return .fullUpdate(data)
         }
 
         guard let array = parsed as? [[String: Any]] else {
-            print("[MLB API] GET /diffPatch game=\(gamePk) \(Self.formatBytes(data.count)) (unparseable)")
+            print("[MLB API] GET /diffPatch game=\(gamePk)\(tag) \(Self.formatBytes(data.count)) (unparseable)")
             return .fullUpdate(data)
         }
 
         if array.isEmpty {
-            print("[MLB API] GET /diffPatch game=\(gamePk) \(Self.formatBytes(data.count)) no changes")
+            print("[MLB API] GET /diffPatch game=\(gamePk)\(tag) \(Self.formatBytes(data.count)) no changes")
             return .noChanges
         }
 
@@ -119,12 +121,12 @@ struct MLBStatsAPI: Sendable {
             } else {
                 // API returned a full feed object instead of patches - serialize it back
                 let entryData = try JSONSerialization.data(withJSONObject: entry)
-                print("[MLB API] GET /diffPatch game=\(gamePk) \(Self.formatBytes(data.count)) full update")
+                print("[MLB API] GET /diffPatch game=\(gamePk)\(tag) \(Self.formatBytes(data.count)) full update")
                 return .fullUpdate(entryData)
             }
         }
 
-        print("[MLB API] GET /diffPatch game=\(gamePk) \(Self.formatBytes(data.count)) \(allPatches.count) ops")
+        print("[MLB API] GET /diffPatch game=\(gamePk)\(tag) \(Self.formatBytes(data.count)) \(allPatches.count) ops")
         return .patches(allPatches)
     }
 

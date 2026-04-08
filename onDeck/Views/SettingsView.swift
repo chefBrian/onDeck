@@ -79,6 +79,7 @@ struct SettingsView: View {
 
             Section("Display") {
                 Toggle("Hide bench players", isOn: $appState.hideBenchPlayers)
+                Toggle("Always open popout on launch", isOn: $appState.alwaysOpenPopout)
             }
 
             Section("Notifications") {

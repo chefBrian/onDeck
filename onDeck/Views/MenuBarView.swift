@@ -721,7 +721,16 @@ final class FloatingPanel {
             backing: .buffered,
             defer: false
         )
-        panel.contentView = NSHostingView(rootView: content)
+        let hostingView = NSHostingView(rootView: content)
+        hostingView.translatesAutoresizingMaskIntoConstraints = false
+        panel.contentView = NSView()
+        panel.contentView!.addSubview(hostingView)
+        NSLayoutConstraint.activate([
+            hostingView.leadingAnchor.constraint(equalTo: panel.contentView!.leadingAnchor),
+            hostingView.trailingAnchor.constraint(equalTo: panel.contentView!.trailingAnchor),
+            hostingView.topAnchor.constraint(equalTo: panel.contentView!.topAnchor),
+            hostingView.bottomAnchor.constraint(equalTo: panel.contentView!.bottomAnchor),
+        ])
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.isMovableByWindowBackground = true

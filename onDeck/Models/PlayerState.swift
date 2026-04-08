@@ -5,8 +5,14 @@ enum PlayerState {
     case upcoming(startTime: Date)
     case inactive(reason: InactiveReason)
 
+    enum ActiveRole {
+        case batting
+        case pitching
+    }
+
     struct GameContext {
         let gamePk: Int
+        let role: ActiveRole
         let inning: String
         let homeTeam: String
         let awayTeam: String

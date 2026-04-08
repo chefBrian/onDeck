@@ -40,6 +40,11 @@ final class AppState {
         }
     }
 
+    var alwaysOpenPopout: Bool {
+        get { UserDefaults.standard.bool(forKey: "alwaysOpenPopout") }
+        set { UserDefaults.standard.set(newValue, forKey: "alwaysOpenPopout") }
+    }
+
     // Team picker state
     var availableTeams: [FantraxAPI.FantraxTeam] = []
     var isLoadingTeams = false
@@ -79,7 +84,12 @@ final class AppState {
     init() {
         gameMonitor.configure(stateManager: stateManager)
         setupStateChangeHandler()
-        Task { await start() }
+        Task {
+            await start()
+            if alwaysOpenPopout && !FloatingPanel.shared.isShowing {
+                FloatingPanel.shared.toggle(appState: self)
+            }
+        }
     }
 
     // MARK: - Lifecycle
@@ -276,7 +286,8 @@ final class AppState {
             if !wasActive {
                 let gameString = formatGameString(context: context)
                 let streamURL = streamURL(for: context.gamePk)
-                if player.isPitcher && !player.isHitter {
+                switch context.role {
+                case .pitching:
                     print("[Notification] PITCHING: \(player.name) - \(gameString), \(context.inning)")
                     await notificationManager.notifyPitching(
                         playerName: player.name,
@@ -284,7 +295,7 @@ final class AppState {
                         inning: context.inning,
                         streamURL: streamURL
                     )
-                } else {
+                case .batting:
                     print("[Notification] BATTING: \(player.name) - \(gameString), \(context.inning)")
                     await notificationManager.notifyBatting(
                         playerName: player.name,
@@ -296,18 +307,16 @@ final class AppState {
             }
 
         case (.active(let context), .upcoming):
-            if let lastFeedResult = gameMonitor.lastPlayDescriptions[playerID] {
-                if player.isHitter {
-                    await notificationManager.notifyAtBatResult(
-                        playerName: player.name,
-                        description: lastFeedResult,
-                        streamURL: streamURL(for: context.gamePk)
-                    )
-                }
+            if context.role == .batting, let lastFeedResult = gameMonitor.lastPlayDescriptions[playerID] {
+                await notificationManager.notifyAtBatResult(
+                    playerName: player.name,
+                    description: lastFeedResult,
+                    streamURL: streamURL(for: context.gamePk)
+                )
             }
 
         case (.active(let context), .inactive(.substituted(_))):
-            if player.isPitcher {
+            if context.role == .pitching {
                 await notificationManager.notifyPitchingResult(
                     playerName: player.name,
                     description: "\(player.name) has been pulled from the game",
@@ -347,7 +356,7 @@ final class AppState {
         print("[AppState] Pre-game refresh scheduled for \(refreshTime) (15 min before \(earliestStart))")
         preGameRefreshTask = Task { [weak self] in
             do {
-                try await Task.sleep(for: .seconds(delay))
+                try await Task.sleep(for: .seconds(delay), tolerance: .seconds(60))
             } catch {
                 return // Task cancelled
             }
@@ -379,7 +388,7 @@ final class AppState {
 
                 let interval = next8AM.timeIntervalSince(now)
                 do {
-                    try await Task.sleep(for: .seconds(max(interval, 60)))
+                    try await Task.sleep(for: .seconds(max(interval, 60)), tolerance: .seconds(120))
                 } catch {
                     return
                 }
