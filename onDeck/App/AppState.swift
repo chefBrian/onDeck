@@ -80,6 +80,7 @@ final class AppState {
     private var midnightTask: Task<Void, Never>?
     private var preGameRefreshTask: Task<Void, Never>?
     private var hasStarted = false
+    private var notifiedPitcherIDs: Set<Int> = []
 
     init() {
         gameMonitor.configure(stateManager: stateManager)
@@ -165,6 +166,7 @@ final class AppState {
         games = scheduleManager.todaysGames
 
         stateManager.reset()
+        notifiedPitcherIDs.removeAll()
         initializePlayerStates()
 
         gameMonitor.stopMonitoring()
@@ -288,6 +290,8 @@ final class AppState {
                 let streamURL = streamURL(for: context.gamePk)
                 switch context.role {
                 case .pitching:
+                    guard !notifiedPitcherIDs.contains(playerID) else { break }
+                    notifiedPitcherIDs.insert(playerID)
                     print("[Notification] PITCHING: \(player.name) - \(gameString), \(context.inning)")
                     await notificationManager.notifyPitching(
                         playerName: player.name,

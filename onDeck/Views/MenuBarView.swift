@@ -377,12 +377,7 @@ private struct DonePlayerRow: View {
         if player.isPitcher && !player.isHitter {
             return stats.pitchingLine
         }
-        let order = (feed.homeBattingOrder.firstIndex(of: player.id) ?? feed.awayBattingOrder.firstIndex(of: player.id))
-            .map { battingOrderLabel($0 + 1) }
-        if let batting = stats.battingLine {
-            return order.map { "\($0): \(batting)" } ?? batting
-        }
-        return nil
+        return stats.battingLine
     }
 }
 
