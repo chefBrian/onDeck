@@ -23,8 +23,6 @@ A macOS menu bar app that monitors live MLB games and sends notifications when y
 3. Click the menu bar icon and open **Settings**
 4. Paste your Fantrax league URL and select your team
 
-Paste any Fantrax league URL and select your team.
-
 ## Requirements
 
 - macOS 26+
@@ -37,5 +35,5 @@ Paste any Fantrax league URL and select your team.
 - MenuBarExtra for the menu bar interface
 - `@Observable` + Swift concurrency
 - MLB Stats API (REST polling)
-- Fantrax web scraping for roster data
+- Fantrax API for roster data
 - UserNotifications for alerts
