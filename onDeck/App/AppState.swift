@@ -18,6 +18,9 @@ final class AppState {
     private let notificationManager = NotificationManager.shared
     private let fantraxAPI = FantraxAPI()
 
+    // Sync state
+    var isSyncing = false
+
     // Settings
     var rosterURL: String {
         get { UserDefaults.standard.string(forKey: "rosterURL") ?? "" }
@@ -70,6 +73,7 @@ final class AppState {
     }
 
     private var midnightTask: Task<Void, Never>?
+    private var preGameRefreshTask: Task<Void, Never>?
     private var hasStarted = false
 
     init() {
@@ -136,8 +140,10 @@ final class AppState {
         guard let leagueID = parsedLeagueID,
               let teamID = effectiveTeamID else { return }
 
+        isSyncing = true
         await rosterManager.syncRoster(leagueID: leagueID, teamID: teamID)
         await fetchScheduleAndStartMonitoring()
+        isSyncing = false
     }
 
     private func fetchScheduleAndStartMonitoring() async {
@@ -151,6 +157,7 @@ final class AppState {
         gameMonitor.stopMonitoring()
         if !games.isEmpty {
             gameMonitor.startMonitoring(games: games, players: rosterManager.players)
+            schedulePreGameRefresh()
         }
     }
 
@@ -306,6 +313,36 @@ final class AppState {
 
     private func formatGameString(context: PlayerState.GameContext) -> String {
         return "\(context.awayTeam) \(context.awayScore) - \(context.homeTeam) \(context.homeScore)"
+    }
+
+    // MARK: - Pre-Game Refresh (15 min before first game)
+
+    private func schedulePreGameRefresh() {
+        preGameRefreshTask?.cancel()
+
+        guard let earliestStart = games.map(\.startTime).min() else { return }
+        let refreshTime = earliestStart.addingTimeInterval(-15 * 60)
+        let delay = refreshTime.timeIntervalSinceNow
+
+        // If already past the refresh window, fire immediately
+        if delay <= 0 {
+            print("[AppState] Pre-game refresh: firing immediately (first game at \(earliestStart))")
+            preGameRefreshTask = Task {
+                await resyncRoster()
+            }
+            return
+        }
+
+        print("[AppState] Pre-game refresh scheduled for \(refreshTime) (15 min before \(earliestStart))")
+        preGameRefreshTask = Task {
+            do {
+                try await Task.sleep(for: .seconds(delay))
+            } catch {
+                return // Task cancelled
+            }
+            print("[AppState] Pre-game refresh firing")
+            await resyncRoster()
+        }
     }
 
     // MARK: - Daily Refresh (8 AM)

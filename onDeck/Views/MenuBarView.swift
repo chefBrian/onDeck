@@ -499,6 +499,11 @@ final class TeamLogoCache {
 struct FooterButtons: View {
     let appState: AppState
     @Environment(\.openSettings) private var openSettings
+    @State private var refreshState: RefreshButtonState = .idle
+
+    private enum RefreshButtonState {
+        case idle, spinning, done
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -515,12 +520,7 @@ struct FooterButtons: View {
                     }
                 }
             }
-            footerButton(assetIcon: "GitHubIcon", label: "GitHub") {
-                dismissMenu()
-                if let url = URL(string: "https://github.com/chefBrian/onDeck") {
-                    NSWorkspace.shared.open(url)
-                }
-            }
+            refreshButton
             footerButton(systemIcon: FloatingPanel.shared.isShowing ? "pip.exit" : "pip.enter", label: "Float") {
                 dismissMenu()
                 FloatingPanel.shared.toggle(appState: appState)
@@ -548,6 +548,50 @@ struct FooterButtons: View {
             VStack(spacing: 3) {
                 icon.frame(width: 24, height: 20, alignment: .center)
                 Text(label)
+                    .font(.system(size: 10))
+                    .fixedSize()
+            }
+            .frame(width: 52, height: 42)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(FooterButtonStyle())
+        .foregroundStyle(.secondary)
+    }
+
+    private var refreshButton: some View {
+        Button {
+            guard refreshState == .idle else { return }
+            refreshState = .spinning
+            Task {
+                await appState.resyncRoster()
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    refreshState = .done
+                }
+                try? await Task.sleep(for: .seconds(1.2))
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    refreshState = .idle
+                }
+            }
+        } label: {
+            VStack(spacing: 3) {
+                ZStack {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 16))
+                        .rotationEffect(.degrees(refreshState == .spinning ? 360 : 0))
+                        .animation(
+                            refreshState == .spinning
+                                ? .linear(duration: 0.8).repeatForever(autoreverses: false)
+                                : .default,
+                            value: refreshState == .spinning
+                        )
+                        .opacity(refreshState == .done ? 0 : 1)
+
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 16, weight: .semibold))
+                        .opacity(refreshState == .done ? 1 : 0)
+                }
+                .frame(width: 24, height: 20, alignment: .center)
+                Text("Refresh")
                     .font(.system(size: 10))
                     .fixedSize()
             }

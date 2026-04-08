@@ -99,6 +99,10 @@ struct SettingsView: View {
                         UserDefaults.standard.set(new, forKey: "notifyPitchingResult")
                     }
             }
+            Section("Links") {
+                Link("GitHub", destination: URL(string: "https://github.com/chefBrian/onDeck")!)
+                Link("Report a Bug", destination: URL(string: "https://github.com/chefBrian/onDeck/issues")!)
+            }
         }
         .formStyle(.grouped)
         .frame(width: 450, height: 400)

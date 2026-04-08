@@ -77,6 +77,19 @@ final class GameMonitor {
     // MARK: - Polling Loop
 
     private func pollGame(gamePk: Int, game: Game) async {
+        // Wait until 15 minutes before game start
+        let pollStart = game.startTime.addingTimeInterval(-15 * 60)
+        let delay = pollStart.timeIntervalSinceNow
+        if delay > 0 {
+            print("[GameMonitor] Game \(gamePk) starts at \(game.startTime) - sleeping until \(pollStart)")
+            do {
+                try await Task.sleep(for: .seconds(delay))
+            } catch {
+                return // Task cancelled
+            }
+            print("[GameMonitor] Game \(gamePk) - waking up, starting poll loop")
+        }
+
         while !Task.isCancelled {
             do {
                 let feed = try await mlbAPI.fetchLiveFeed(gamePk: gamePk)
