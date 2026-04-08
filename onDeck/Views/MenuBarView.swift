@@ -502,7 +502,7 @@ struct FooterButtons: View {
     @State private var refreshState: RefreshButtonState = .idle
 
     private enum RefreshButtonState {
-        case idle, spinning, done
+        case idle, spinning, done, failed
     }
 
     var body: some View {
@@ -563,8 +563,8 @@ struct FooterButtons: View {
             guard refreshState == .idle else { return }
             refreshState = .spinning
             Task {
-                await appState.resyncRoster()
-                refreshState = .done
+                let success = await appState.resyncRoster()
+                refreshState = success ? .done : .failed
                 try? await Task.sleep(for: .seconds(1.2))
                 refreshState = .idle
             }
@@ -578,6 +578,11 @@ struct FooterButtons: View {
                     } else if refreshState == .done {
                         Image(systemName: "checkmark")
                             .font(.system(size: 16, weight: .semibold))
+                            .transition(.opacity)
+                    } else if refreshState == .failed {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.red)
                             .transition(.opacity)
                     } else {
                         Image(systemName: "arrow.clockwise")

@@ -135,15 +135,18 @@ final class AppState {
         isLoadingTeams = false
     }
 
-    /// Manually trigger a roster re-sync.
-    func resyncRoster() async {
+    /// Manually trigger a roster re-sync. Returns true on success.
+    @discardableResult
+    func resyncRoster() async -> Bool {
         guard let leagueID = parsedLeagueID,
-              let teamID = effectiveTeamID else { return }
+              let teamID = effectiveTeamID else { return false }
 
         isSyncing = true
         await rosterManager.syncRoster(leagueID: leagueID, teamID: teamID)
+        let success = rosterManager.error == nil
         await fetchScheduleAndStartMonitoring()
         isSyncing = false
+        return success
     }
 
     private func fetchScheduleAndStartMonitoring() async {
