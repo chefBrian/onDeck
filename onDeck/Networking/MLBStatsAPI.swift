@@ -113,6 +113,19 @@ struct MLBStatsAPI: Sendable {
         )
     }
 
+    // MARK: - Game Changes
+
+    /// Returns the set of gamePks that have been updated since `since`.
+    func fetchGameChanges(since: Date) async throws -> Set<Int> {
+        let timestamp = ISO8601DateFormatter().string(from: since)
+        let encoded = timestamp.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? timestamp
+        let url = URL(string: "https://statsapi.mlb.com/api/v1/game/changes?updatedSince=\(encoded)&sportId=1")!
+        let (data, _) = try await URLSession.shared.data(from: url)
+        let response = try JSONDecoder().decode(GameChangesResponse.self, from: data)
+        let gamePks = response.dates?.flatMap { $0.games.map(\.gamePk) } ?? []
+        return Set(gamePks)
+    }
+
     // MARK: - Player Stats Parsing
 
     private static func parsePlayerStats(boxscore: FeedBoxscore?) -> [Int: PlayerGameStats] {
@@ -415,4 +428,16 @@ private struct FeedLinescoreTeams: Codable {
 
 private struct FeedLinescoreTeam: Codable {
     let runs: Int?
+}
+
+private struct GameChangesResponse: Codable {
+    let dates: [GameChangesDate]?
+}
+
+private struct GameChangesDate: Codable {
+    let games: [GameChangesGame]
+}
+
+private struct GameChangesGame: Codable {
+    let gamePk: Int
 }
