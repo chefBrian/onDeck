@@ -1,6 +1,6 @@
 <h1 align="center">
   <img src="onDeck/Assets.xcassets/AppIcon.appiconset/icon_256.png" width="128" alt="On Deck app icon">
-  <br>
+
   On Deck
 </h1>
 
