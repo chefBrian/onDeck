@@ -7,6 +7,7 @@ final class AppState {
     var activePlayers: [Player] = []
     var inGamePlayers: [Player] = []     // game started, not at bat
     var upcomingPlayers: [Player] = []   // game hasn't started
+    var donePlayers: [Player] = []       // game over or substituted out
     var games: [Game] = []
 
     // Managers
@@ -74,6 +75,7 @@ final class AppState {
     init() {
         gameMonitor.configure(stateManager: stateManager)
         setupStateChangeHandler()
+        Task { await start() }
     }
 
     // MARK: - Lifecycle
@@ -181,6 +183,12 @@ final class AppState {
             )
         }
 
+        // Mark SP-only players as day off if they're not today's probable pitcher
+        let probablePitcherIDs = Set(games.compactMap(\.homeProbablePitcherID) + games.compactMap(\.awayProbablePitcherID))
+        for player in rosterManager.players where player.isStartingPitcherOnly && !probablePitcherIDs.contains(player.id) {
+            stateManager.update(playerID: player.id, state: .inactive(reason: .dayOff))
+        }
+
         let allGamePlayerIDs = Set(stateManager.playerStates.keys)
         for player in rosterManager.players where !allGamePlayerIDs.contains(player.id) {
             stateManager.update(playerID: player.id, state: .inactive(reason: .dayOff))
@@ -193,6 +201,7 @@ final class AppState {
         var active: [Player] = []
         var inGame: [Player] = []
         var upcoming: [Player] = []
+        var done: [Player] = []
 
         let now = Date.now
         for player in rosterManager.players {
@@ -206,7 +215,14 @@ final class AppState {
                 } else {
                     upcoming.append(player)
                 }
-            case .inactive, .none:
+            case .inactive(let reason):
+                switch reason {
+                case .gameOver, .substituted:
+                    done.append(player)
+                case .dayOff:
+                    break
+                }
+            case .none:
                 break
             }
         }
@@ -214,12 +230,17 @@ final class AppState {
         activePlayers = active
         inGamePlayers = inGame
         upcomingPlayers = upcoming
+        donePlayers = done.sorted { a, b in
+            if a.isHitter != b.isHitter { return a.isHitter }
+            return false
+        }
     }
 
     // MARK: - Notifications
 
     private func handleStateTransition(playerID: Int, oldState: PlayerState?, newState: PlayerState) async {
         guard let player = rosterManager.players.first(where: { $0.id == playerID }) else { return }
+        if hideBenchPlayers && player.isOnBench { return }
 
         switch (oldState, newState) {
         case (_, .active(let context)):
@@ -259,7 +280,7 @@ final class AppState {
                 }
             }
 
-        case (.active(let context), .inactive(.substituted)):
+        case (.active(let context), .inactive(.substituted(_))):
             if player.isPitcher {
                 await notificationManager.notifyPitchingResult(
                     playerName: player.name,

@@ -2,17 +2,19 @@ import SwiftUI
 
 struct MenuBarView: View {
     @Bindable var appState: AppState
+    var isFloating = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             activeSection
             inGameSection
             upcomingSection
+            doneSection
             emptySection
             errorSection
             footerSection
         }
-        .frame(width: 280)
+        .frame(width: 300)
         .transaction { $0.animation = nil }
     }
 
@@ -21,7 +23,7 @@ struct MenuBarView: View {
     @ViewBuilder
     private var activeSection: some View {
         if !appState.activePlayers.isEmpty {
-            sectionHeader("Active Now")
+            sectionHeader("Active Now", showClose: true)
             ForEach(appState.activePlayers) { player in
                 activePlayerRow(player)
             }
@@ -32,7 +34,7 @@ struct MenuBarView: View {
     @ViewBuilder
     private var inGameSection: some View {
         if !appState.inGamePlayers.isEmpty {
-            sectionHeader("In Game")
+            sectionHeader("In Game", showClose: !appState.activePlayers.isEmpty ? false : true)
             ForEach(appState.inGamePlayers) { player in
                 inGamePlayerRow(player)
             }
@@ -43,20 +45,46 @@ struct MenuBarView: View {
     @ViewBuilder
     private var upcomingSection: some View {
         if !appState.upcomingPlayers.isEmpty {
-            sectionHeader("Upcoming")
+            sectionHeader("Upcoming", showClose: appState.activePlayers.isEmpty && appState.inGamePlayers.isEmpty)
             ForEach(appState.upcomingPlayers) { player in
                 upcomingPlayerRow(player)
             }
-            divider()
+            if !appState.donePlayers.isEmpty {
+                divider()
+            } else if isFloating {
+                Spacer().frame(height: 8)
+            } else {
+                divider()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var doneSection: some View {
+        if !appState.donePlayers.isEmpty {
+            let showClose = appState.activePlayers.isEmpty && appState.inGamePlayers.isEmpty && appState.upcomingPlayers.isEmpty
+            sectionHeader("Done", showClose: showClose)
+            ForEach(appState.donePlayers) { player in
+                donePlayerRow(player)
+            }
+            if isFloating {
+                Spacer().frame(height: 8)
+            } else {
+                divider()
+            }
         }
     }
 
     @ViewBuilder
     private var emptySection: some View {
         if appState.activePlayers.isEmpty && appState.upcomingPlayers.isEmpty
-            && appState.inGamePlayers.isEmpty {
+            && appState.inGamePlayers.isEmpty && appState.donePlayers.isEmpty {
             emptyState()
-            divider()
+            if isFloating {
+                Spacer().frame(height: 8)
+            } else {
+                divider()
+            }
         }
     }
 
@@ -75,21 +103,37 @@ struct MenuBarView: View {
         }
     }
 
+    @ViewBuilder
     private var footerSection: some View {
-        FooterButtons()
+        if !isFloating {
+            FooterButtons(appState: appState)
+        }
     }
 
     // MARK: - Reusable Components
 
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.caption)
-            .fontWeight(.semibold)
-            .foregroundStyle(.secondary)
-            .textCase(.uppercase)
-            .padding(.horizontal, 12)
-            .padding(.top, 10)
-            .padding(.bottom, 4)
+    private func sectionHeader(_ title: String, showClose: Bool = false) -> some View {
+        HStack {
+            Text(title)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+            Spacer()
+            if showClose && isFloating {
+                Button {
+                    FloatingPanel.shared.close()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 4)
     }
 
     private func divider() -> some View {
@@ -102,109 +146,121 @@ struct MenuBarView: View {
     // MARK: - Row Views
 
     private func activePlayerRow(_ player: Player) -> some View {
-        Button { openStream(for: player) } label: {
-            activePlayerContent(player)
-        }
-        .buttonStyle(MenuRowButtonStyle())
+        livePlayerRow(player)
     }
 
-    private func activePlayerContent(_ player: Player) -> some View {
-        Group {
-            if case .active(let ctx) = appState.stateManager.playerStates[player.id] {
-                VStack(alignment: .leading, spacing: 6) {
-                    playerHeader(player)
-                    gameStateCard(ctx)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-            }
+    private func statLine(for player: Player, gamePk: Int) -> String? {
+        guard let feed = appState.gameMonitor.latestFeeds[gamePk],
+              let stats = feed.playerStats[player.id] else { return nil }
+        if player.isPitcher && !player.isHitter {
+            return stats.pitchingLine
         }
+        return stats.battingLine
     }
 
-    private func playerHeader(_ player: Player) -> some View {
-        HStack {
-            Circle()
-                .fill(.green)
-                .frame(width: 6, height: 6)
-            Text(player.name)
-                .fontWeight(.semibold)
-            Spacer()
-            Text(player.isPitcher && !player.isHitter ? "Pitching" : "At Bat")
-                .font(.caption2)
-                .foregroundStyle(.green)
+    private func scoreBlock(awayTeamID: Int, awayScore: Int, homeTeamID: Int, homeScore: Int) -> some View {
+        VStack(alignment: .trailing, spacing: 2) {
+            HStack(spacing: 6) {
+                Text("\(awayScore)")
+                    .monospacedDigit()
+                TeamLogo(teamID: awayTeamID, size: 16)
+            }
+            HStack(spacing: 6) {
+                Text("\(homeScore)")
+                    .monospacedDigit()
+                TeamLogo(teamID: homeTeamID, size: 16)
+            }
         }
+        .font(.system(size: 16, weight: .semibold))
+        .frame(width: 50, alignment: .trailing)
     }
 
-    private func gameStateCard(_ ctx: PlayerState.GameContext) -> some View {
-        HStack(spacing: 12) {
-            // Score
-            VStack(alignment: .leading, spacing: 1) {
-                scoreRow(team: ctx.awayTeam, score: ctx.awayScore,
-                         isUp: ctx.inning.hasPrefix("Top"))
-                scoreRow(team: ctx.homeTeam, score: ctx.homeScore,
-                         isUp: ctx.inning.hasPrefix("Bot"))
-            }
-            .font(.system(size: 11, weight: .medium, design: .monospaced))
-
-            Spacer()
-
-            // Bases
-            BasesDiagram(
-                first: ctx.runnerOnFirst,
-                second: ctx.runnerOnSecond,
-                third: ctx.runnerOnThird
-            )
-
-            // Inning + Count + Outs
-            VStack(alignment: .trailing, spacing: 3) {
-                HStack(spacing: 1) {
-                    Image(systemName: ctx.inning.hasPrefix("Top") ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
-                        .font(.system(size: 6))
-                    Text(ctx.inning.filter(\.isNumber))
-                }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                Text("\(ctx.balls)-\(ctx.strikes)")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                OutsIndicator(outs: ctx.outs)
-            }
+    private func inningLabel(_ inning: String) -> some View {
+        HStack(spacing: 2) {
+            Image(systemName: inning.hasPrefix("Top") ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
+                .font(.system(size: 12))
+            Text(inning.filter(\.isNumber))
+                .font(.system(size: 15, weight: .semibold))
         }
-        .padding(8)
-        .background(.white.opacity(0.05))
-        .cornerRadius(6)
+        .foregroundStyle(.secondary)
     }
 
     private func inGamePlayerRow(_ player: Player) -> some View {
-        Button { openStream(for: player) } label: {
-            inGamePlayerContent(player)
-        }
-        .buttonStyle(MenuRowButtonStyle())
+        livePlayerRow(player)
     }
 
-    private func inGamePlayerContent(_ player: Player) -> some View {
-        HStack {
-            Text(player.name)
-            Spacer()
-            if let feed = feedForPlayer(player) {
-                let awayShort = feed.awayTeam.split(separator: " ").last.map(String.init) ?? feed.awayTeam
-                let homeShort = feed.homeTeam.split(separator: " ").last.map(String.init) ?? feed.homeTeam
-                Text("\(awayShort) \(feed.awayScore)-\(feed.homeScore) \(homeShort)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                HStack(spacing: 3) {
-                    inningLabel(feed)
-                    OutsIndicator(outs: feed.outs)
+    private func livePlayerRow(_ player: Player) -> some View {
+        let isActive: Bool = {
+            if case .active = appState.stateManager.playerStates[player.id] { return true }
+            return false
+        }()
+
+        return Button { openStream(for: player) } label: {
+            Group {
+                if let feed = feedForPlayer(player) {
+                    HStack(alignment: .center, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            HStack(spacing: 4) {
+                                if isActive {
+                                    Circle()
+                                        .fill(.green)
+                                        .frame(width: 6, height: 6)
+                                }
+                                Text(player.name)
+                                    .fontWeight(isActive ? .semibold : .medium)
+                                    .lineLimit(1)
+                            }
+                            if let game = gameForPlayer(player),
+                               let line = statLine(for: player, gamePk: game.id) {
+                                Text(line)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.leading, isActive ? 10 : 0)
+                            }
+                        }
+                        Spacer()
+                        HStack(alignment: .center, spacing: 5) {
+                            VStack(spacing: -3) {
+                                BasesDiagram(
+                                    first: feed.runnerOnFirst,
+                                    second: feed.runnerOnSecond,
+                                    third: feed.runnerOnThird
+                                )
+                                HStack(spacing: 1) {
+                                    Image(systemName: feed.inningHalf == "Top" ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
+                                        .font(.system(size: 7))
+                                    Text("\(feed.inning ?? 0)")
+                                        .font(.system(size: 11, weight: .semibold))
+                                }
+                                .foregroundStyle(.secondary)
+                            }
+                            VStack(spacing: 2) {
+                                Text("\(feed.balls)-\(feed.strikes)")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .monospacedDigit()
+                                OutsIndicator(outs: feed.outs)
+                            }
+                        }
+                        scoreBlock(
+                            awayTeamID: feed.awayTeamID, awayScore: feed.awayScore,
+                            homeTeamID: feed.homeTeamID, homeScore: feed.homeScore
+                        )
+                    }
+                } else {
+                    HStack {
+                        Text(player.name)
+                            .fontWeight(.medium)
+                        Spacer()
+                        Text("In Game")
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                    }
                 }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            } else {
-                Text("In Game")
-                    .font(.caption)
-                    .foregroundStyle(.green)
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 3)
+        .buttonStyle(MenuRowButtonStyle())
     }
 
     private func upcomingPlayerRow(_ player: Player) -> some View {
@@ -219,6 +275,31 @@ struct MenuBarView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 3)
+    }
+
+    private func donePlayerRow(_ player: Player) -> some View {
+        HStack {
+            Text(player.name)
+                .foregroundStyle(.secondary)
+            Spacer()
+            if let gamePk = doneGamePk(for: player),
+               let line = statLine(for: player, gamePk: gamePk) {
+                Text(line)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 3)
+    }
+
+    private func doneGamePk(for player: Player) -> Int? {
+        guard case .inactive(let reason) = appState.stateManager.playerStates[player.id] else { return nil }
+        switch reason {
+        case .gameOver(let gamePk): return gamePk
+        case .substituted(let gamePk): return gamePk
+        case .dayOff: return nil
+        }
     }
 
     @ViewBuilder
@@ -248,22 +329,7 @@ struct MenuBarView: View {
 
     // MARK: - Helpers
 
-    private func scoreRow(team: String, score: Int, isUp: Bool) -> some View {
-        HStack(spacing: 4) {
-            if isUp {
-                Image(systemName: "arrowtriangle.right.fill")
-                    .font(.system(size: 5))
-                    .foregroundStyle(.green)
-            } else {
-                Color.clear.frame(width: 5, height: 5)
-            }
-            Text(team)
-                .frame(width: 50, alignment: .leading)
-                .lineLimit(1)
-            Text("\(score)")
-                .frame(width: 20, alignment: .trailing)
-        }
-    }
+
 
     private func feedForPlayer(_ player: Player) -> LiveFeedData? {
         guard let game = gameForPlayer(player) else { return nil }
@@ -278,15 +344,9 @@ struct MenuBarView: View {
     }
 
     private func inningLabel(_ feed: LiveFeedData) -> some View {
-        HStack(spacing: 1) {
-            if let half = feed.inningHalf {
-                Image(systemName: half == "Top" ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
-                    .font(.system(size: 6))
-            }
-            if let inning = feed.inning {
-                Text("\(inning)")
-            }
-        }
+        let str = [feed.inningHalf == "Top" ? "Top" : "Bot", feed.inning.map { "\($0)" } ?? ""]
+            .joined(separator: " ")
+        return inningLabel(str)
     }
 
     private func openStream(for player: Player) {
@@ -319,9 +379,9 @@ struct BasesDiagram: View {
     let third: Bool
 
     var body: some View {
-        VStack(spacing: -1) {
+        VStack(spacing: -6) {
             diamond(filled: second)
-            HStack(spacing: 8) {
+            HStack(spacing: 0) {
                 diamond(filled: third)
                 diamond(filled: first)
             }
@@ -330,7 +390,7 @@ struct BasesDiagram: View {
 
     private func diamond(filled: Bool) -> some View {
         Image(systemName: filled ? "diamond.fill" : "diamond")
-            .font(.system(size: 9))
+            .font(.system(size: 10))
             .foregroundStyle(filled ? .white : .gray.opacity(0.3))
     }
 }
@@ -341,12 +401,75 @@ struct OutsIndicator: View {
     let outs: Int
 
     var body: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 4) {
             ForEach(0..<3, id: \.self) { i in
                 Circle()
                     .fill(i < outs ? .white : .gray.opacity(0.3))
-                    .frame(width: 6, height: 6)
+                    .frame(width: 7, height: 7)
             }
+        }
+    }
+}
+
+// MARK: - Team Logo
+
+struct TeamLogo: View {
+    let teamID: Int
+    let size: CGFloat
+
+    @State private var image: NSImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .scaleEffect(1.7)
+            } else {
+                Color.clear
+            }
+        }
+        .frame(width: size, height: size)
+        .clipped()
+        .task(id: teamID) {
+            image = await TeamLogoCache.shared.logo(for: teamID, size: Int(size * 2))
+        }
+    }
+}
+
+@MainActor
+final class TeamLogoCache {
+    static let shared = TeamLogoCache()
+
+    private var memory: [String: NSImage] = [:]
+    private let cacheDir: URL = {
+        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("TeamLogos", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+
+    func logo(for teamID: Int, size: Int) async -> NSImage? {
+        let key = "\(teamID)_\(size)"
+
+        if let cached = memory[key] { return cached }
+
+        let file = cacheDir.appendingPathComponent("\(key).png")
+        if let diskImage = NSImage(contentsOf: file) {
+            memory[key] = diskImage
+            return diskImage
+        }
+
+        guard let url = URL(string: "https://midfield.mlbstatic.com/v1/team/\(teamID)/spots/\(size)") else { return nil }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            guard let image = NSImage(data: data) else { return nil }
+            memory[key] = image
+            try? data.write(to: file)
+            return image
+        } catch {
+            return nil
         }
     }
 }
@@ -354,6 +477,7 @@ struct OutsIndicator: View {
 // MARK: - Footer Buttons
 
 struct FooterButtons: View {
+    let appState: AppState
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
@@ -362,6 +486,11 @@ struct FooterButtons: View {
                 openSettings()
             } label: {
                 Text("Settings...")
+            }
+            Button {
+                FloatingPanel.shared.toggle(appState: appState)
+            } label: {
+                Image(systemName: FloatingPanel.shared.isShowing ? "pip.exit" : "pip.enter")
             }
             Spacer()
             Button {
@@ -375,5 +504,67 @@ struct FooterButtons: View {
         .font(.caption)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+}
+
+// MARK: - Floating Panel
+
+@MainActor
+final class FloatingPanel {
+    static let shared = FloatingPanel()
+    fileprivate var panel: NSPanel?
+
+    var isShowing: Bool { panel != nil }
+
+    func toggle(appState: AppState) {
+        if let panel {
+            panel.close()
+            self.panel = nil
+        } else {
+            show(appState: appState)
+        }
+    }
+
+    private func show(appState: AppState) {
+        let content = MenuBarView(appState: appState, isFloating: true)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 300, height: 500),
+            styleMask: [.borderless, .nonactivatingPanel, .utilityWindow],
+            backing: .buffered,
+            defer: false
+        )
+        panel.contentView = NSHostingView(rootView: content)
+        panel.isFloatingPanel = true
+        panel.level = .floating
+        panel.isMovableByWindowBackground = true
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        panel.isReleasedWhenClosed = false
+        panel.setFrameAutosaveName("FloatingPanel")
+        if !panel.setFrameUsingName("FloatingPanel") {
+            panel.center()
+        }
+        panel.makeKeyAndOrderFront(nil)
+        panel.delegate = PanelCloseDelegate.shared
+
+        self.panel = panel
+    }
+
+    func close() {
+        panel?.close()
+        panel = nil
+    }
+}
+
+private class PanelCloseDelegate: NSObject, NSWindowDelegate {
+    static let shared = PanelCloseDelegate()
+
+    func windowWillClose(_ notification: Notification) {
+        // Just nil out the reference, don't call close() again
+        FloatingPanel.shared.panel = nil
     }
 }

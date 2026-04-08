@@ -24,9 +24,9 @@ final class StateManager {
     }
 
     /// Sets all players in a game to inactive (game over).
-    func setGameOver(playerIDs: [Int]) {
+    func setGameOver(playerIDs: [Int], gamePk: Int) {
         for id in playerIDs {
-            update(playerID: id, state: .inactive(reason: .gameOver))
+            update(playerID: id, state: .inactive(reason: .gameOver(gamePk: gamePk)))
         }
     }
 

@@ -68,7 +68,7 @@ struct FantraxAPI: Sendable {
                             let teamShortName = scorer["teamShortName"] as? String ?? ""
                             let posString = scorer["posShortNames"] as? String ?? ""
                             let positions = posString.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
-                            let statusId = row["statusId"] as? Int ?? 1
+                            let statusId = (row["statusId"] as? Int) ?? Int("\(row["statusId"] ?? "")") ?? 1
                             players.append(FantraxPlayer(name: name, teamShortName: teamShortName, positions: positions, statusId: statusId))
                         }
                     }

@@ -10,6 +10,8 @@ enum PlayerState {
         let inning: String
         let homeTeam: String
         let awayTeam: String
+        let homeTeamID: Int
+        let awayTeamID: Int
         let homeScore: Int
         let awayScore: Int
         let balls: Int
@@ -21,8 +23,8 @@ enum PlayerState {
     }
 
     enum InactiveReason {
-        case gameOver
+        case gameOver(gamePk: Int)
         case dayOff
-        case substituted
+        case substituted(gamePk: Int)
     }
 }

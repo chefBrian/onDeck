@@ -102,6 +102,12 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 450, height: 400)
+        .onAppear {
+            NSApplication.shared.setActivationPolicy(.regular)
+        }
+        .onDisappear {
+            NSApplication.shared.setActivationPolicy(.accessory)
+        }
     }
 }
 

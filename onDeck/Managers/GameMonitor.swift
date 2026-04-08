@@ -14,6 +14,8 @@ final class GameMonitor {
     /// Tracks previously seen batter/pitcher per game to detect transitions.
     private var lastBatterID: [Int: Int] = [:] // gamePk -> batterID
     private var lastPitcherID: [Int: Int] = [:] // gamePk -> pitcherID
+    private var lastHomePitcherID: [Int: Int] = [:] // gamePk -> last pitcher for home team
+    private var lastAwayPitcherID: [Int: Int] = [:] // gamePk -> last pitcher for away team
 
     /// Stores the last completed play description per player (for result notifications).
     var lastPlayDescriptions: [Int: String] = [:] // playerID -> description
@@ -57,6 +59,8 @@ final class GameMonitor {
         pollingTasks.removeAll()
         lastBatterID.removeAll()
         lastPitcherID.removeAll()
+        lastHomePitcherID.removeAll()
+        lastAwayPitcherID.removeAll()
         lineupPlayerIDs.removeAll()
         isMonitoring = false
     }
@@ -84,7 +88,7 @@ final class GameMonitor {
                     let playerIDsInGame = rosterPlayerIDs.filter { id in
                         isPlayerInGame(playerID: id, game: game)
                     }
-                    stateManager?.setGameOver(playerIDs: Array(playerIDsInGame))
+                    stateManager?.setGameOver(playerIDs: Array(playerIDsInGame), gamePk: gamePk)
                     stopMonitoring(gamePk: gamePk)
                     return
                 }
@@ -112,8 +116,8 @@ final class GameMonitor {
             lineupPlayerIDs[gamePk] = lineupIDs
         }
 
-        guard feed.gameState == "Live" else {
-            print("[GameMonitor] Game \(gamePk) state: \(feed.gameState) (skipping)")
+        guard feed.gameState == "Live", feed.detailedState == "In Progress" else {
+            print("[GameMonitor] Game \(gamePk) state: \(feed.gameState)/\(feed.detailedState ?? "nil") (skipping)")
             return
         }
 
@@ -125,6 +129,8 @@ final class GameMonitor {
             inning: formatInning(feed),
             homeTeam: homeShort,
             awayTeam: awayShort,
+            homeTeamID: feed.homeTeamID,
+            awayTeamID: feed.awayTeamID,
             homeScore: feed.homeScore,
             awayScore: feed.awayScore,
             balls: feed.balls,
@@ -166,12 +172,52 @@ final class GameMonitor {
             stateManager?.update(playerID: prevBatter, state: .upcoming(startTime: game.startTime))
         }
 
-        // Check if previous pitcher from our roster is no longer active
+        // Track pitcher per team side and detect substitutions
+        if let pitcherID = feed.currentPitcherID {
+            let isHome = feed.homePitchers.contains(pitcherID)
+            if isHome {
+                if let prev = lastHomePitcherID[gamePk], prev != pitcherID, rosterPlayerIDs.contains(prev) {
+                    stateManager?.update(playerID: prev, state: .inactive(reason: .substituted(gamePk: gamePk)))
+                }
+                lastHomePitcherID[gamePk] = pitcherID
+            } else {
+                if let prev = lastAwayPitcherID[gamePk], prev != pitcherID, rosterPlayerIDs.contains(prev) {
+                    stateManager?.update(playerID: prev, state: .inactive(reason: .substituted(gamePk: gamePk)))
+                }
+                lastAwayPitcherID[gamePk] = pitcherID
+            }
+        }
+
+        // Check if previous pitcher from our roster is no longer active (half-inning change)
         if let prevPitcher = lastPitcherID[gamePk],
            prevPitcher != feed.currentPitcherID,
            rosterPlayerIDs.contains(prevPitcher) {
-            // Pitcher was pulled - mark as substituted
-            stateManager?.update(playerID: prevPitcher, state: .inactive(reason: .substituted))
+            // Only set to upcoming if not already marked as substituted
+            let currentState = stateManager?.playerStates[prevPitcher]
+            if case .inactive(.substituted) = currentState {
+                // Already substituted, don't revert
+            } else {
+                stateManager?.update(playerID: prevPitcher, state: .upcoming(startTime: game.startTime))
+            }
+        }
+
+        // Catch-all: check both sides using the last pitcher in each pitchers array
+        // (boxscore pitchers are ordered by appearance, last = current for that side).
+        // Any roster pitcher who pitched earlier but isn't the latest for their side
+        // has been substituted. Handles app restarts and missed transitions.
+        for pitchers in [feed.homePitchers, feed.awayPitchers] {
+            guard let currentForSide = pitchers.last else { continue }
+            for id in rosterPlayerIDs {
+                guard id != currentForSide,
+                      pitchers.contains(id),
+                      feed.playerStats[id]?.pitchingLine != nil,
+                      let player = rosterPlayers[id],
+                      player.isPitcher && !player.isHitter else { continue }
+                let currentState = stateManager?.playerStates[id]
+                if case .inactive(.substituted) = currentState { continue }
+                if case .active = currentState { continue }
+                stateManager?.update(playerID: id, state: .inactive(reason: .substituted(gamePk: gamePk)))
+            }
         }
 
         // Store completed play results for notifications

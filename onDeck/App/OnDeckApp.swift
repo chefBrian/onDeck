@@ -7,9 +7,15 @@ struct OnDeckApp: App {
     var body: some Scene {
         MenuBarExtra {
             MenuBarView(appState: appState)
-                .task { await appState.start() }
         } label: {
-            Label(appState.menuBarTitle, systemImage: "baseball")
+            let isActive = !appState.activePlayers.isEmpty
+            Label {
+                Text(appState.menuBarTitle)
+            } icon: {
+                Image(systemName: "baseball")
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(isActive ? .green : .white)
+            }
         }
         .menuBarExtraStyle(.window)
 

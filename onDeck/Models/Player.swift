@@ -5,11 +5,13 @@ struct Player: Identifiable, Hashable {
     let name: String
     let team: String
     let positions: Set<PlayerPosition>
+    let fantraxPositions: Set<String> // Original position codes from Fantrax (e.g., "SP", "RP", "C")
     let rosterStatus: RosterStatus
 
     var isPitcher: Bool { positions.contains(.pitcher) }
     var isHitter: Bool { positions.contains(.hitter) }
     var isOnBench: Bool { rosterStatus != .active }
+    var isStartingPitcherOnly: Bool { fantraxPositions.contains("SP") && !fantraxPositions.contains("RP") && !isHitter }
 
     enum PlayerPosition: String, Hashable, Codable {
         case hitter
