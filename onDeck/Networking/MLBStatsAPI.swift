@@ -8,6 +8,7 @@ struct MLBStatsAPI: Sendable {
         let cleanName = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? name
         let url = URL(string: "https://statsapi.mlb.com/api/v1/people/search?names=\(cleanName)&hydrate=currentTeam")!
         let (data, _) = try await URLSession.shared.data(from: url)
+        print("[MLB API] GET /people/search name=\(name) \(Self.formatBytes(data.count))")
         let response = try JSONDecoder().decode(SearchResponse.self, from: data)
 
         guard let people = response.people, !people.isEmpty else { return nil }
@@ -34,6 +35,7 @@ struct MLBStatsAPI: Sendable {
         let dateString = Self.dateFormatter.string(from: date)
         let url = URL(string: "https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=\(dateString)&hydrate=team,broadcasts,probablePitcher")!
         let (data, _) = try await URLSession.shared.data(from: url)
+        print("[MLB API] GET /schedule date=\(dateString) \(Self.formatBytes(data.count))")
         let response = try JSONDecoder().decode(ScheduleResponse.self, from: data)
 
         return response.dates?.flatMap { date in
@@ -68,18 +70,79 @@ struct MLBStatsAPI: Sendable {
 
     // MARK: - Live Feed
 
-    func fetchLiveFeed(gamePk: Int) async throws -> LiveFeedData {
+    /// Fetches the full live feed and returns parsed data + raw bytes + timecode for caching.
+    func fetchLiveFeedRaw(gamePk: Int) async throws -> (feed: LiveFeedData, rawData: Data, timecode: String?) {
         let url = URL(string: "https://statsapi.mlb.com/api/v1.1/game/\(gamePk)/feed/live")!
         let (data, _) = try await URLSession.shared.data(from: url)
-        let response = try JSONDecoder().decode(LiveFeedResponse.self, from: data)
+        print("[MLB API] GET /feed/live game=\(gamePk) \(Self.formatBytes(data.count))")
+        let (feed, timecode) = try Self.decodeLiveFeed(from: data)
+        return (feed, data, timecode)
+    }
 
+    /// Decodes a LiveFeedData from raw JSON bytes (used after patching cached data).
+    static func decodeLiveFeed(from data: Data) throws -> (feed: LiveFeedData, timecode: String?) {
+        let response = try JSONDecoder().decode(LiveFeedResponse.self, from: data)
+        return (Self.parseLiveFeedResponse(response), response.metaData?.timeStamp)
+    }
+
+    // MARK: - Diff Patch
+
+    /// Fetches diff patches for a game since a given timecode.
+    func fetchDiffPatch(gamePk: Int, since timecode: String) async throws -> DiffPatchResult {
+        let now = Self.currentTimecode()
+        let url = URL(string: "https://statsapi.mlb.com/api/v1.1/game/\(gamePk)/feed/live/diffPatch?startTimecode=\(timecode)&endTimecode=\(now)")!
+        let (data, _) = try await URLSession.shared.data(from: url)
+
+        let parsed = try JSONSerialization.jsonObject(with: data)
+
+        // API sometimes returns a single feed object (dict) instead of an array
+        if parsed is [String: Any] {
+            print("[MLB API] GET /diffPatch game=\(gamePk) \(Self.formatBytes(data.count)) full update")
+            return .fullUpdate(data)
+        }
+
+        guard let array = parsed as? [[String: Any]] else {
+            print("[MLB API] GET /diffPatch game=\(gamePk) \(Self.formatBytes(data.count)) (unparseable)")
+            return .fullUpdate(data)
+        }
+
+        if array.isEmpty {
+            print("[MLB API] GET /diffPatch game=\(gamePk) \(Self.formatBytes(data.count)) no changes")
+            return .noChanges
+        }
+
+        // Check if entries have "diff" keys (patches) or are full feed objects (fallback)
+        var allPatches: [[String: Any]] = []
+        for entry in array {
+            if let diff = entry["diff"] as? [[String: Any]] {
+                allPatches.append(contentsOf: diff)
+            } else {
+                // API returned a full feed object instead of patches - serialize it back
+                let entryData = try JSONSerialization.data(withJSONObject: entry)
+                print("[MLB API] GET /diffPatch game=\(gamePk) \(Self.formatBytes(data.count)) full update")
+                return .fullUpdate(entryData)
+            }
+        }
+
+        print("[MLB API] GET /diffPatch game=\(gamePk) \(Self.formatBytes(data.count)) \(allPatches.count) ops")
+        return .patches(allPatches)
+    }
+
+    private static func currentTimecode() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd_HHmmss"
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        return formatter.string(from: Date.now)
+    }
+
+    // MARK: - Live Feed Parsing
+
+    private static func parseLiveFeedResponse(_ response: LiveFeedResponse) -> LiveFeedData {
         let currentPlay = response.liveData.plays?.currentPlay
         let linescore = response.liveData.linescore
-
         let offense = linescore?.offense
-
         let boxscore = response.liveData.boxscore
-        let playerStats = Self.parsePlayerStats(boxscore: boxscore)
+        let playerStats = parsePlayerStats(boxscore: boxscore)
 
         return LiveFeedData(
             gameState: response.gameData.status.abstractGameState,
@@ -121,6 +184,7 @@ struct MLBStatsAPI: Sendable {
         let encoded = timestamp.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? timestamp
         let url = URL(string: "https://statsapi.mlb.com/api/v1/game/changes?updatedSince=\(encoded)&sportId=1")!
         let (data, _) = try await URLSession.shared.data(from: url)
+        print("[MLB API] GET /game/changes \(Self.formatBytes(data.count))")
         let response = try JSONDecoder().decode(GameChangesResponse.self, from: data)
         let gamePks = response.dates?.flatMap { $0.games.map(\.gamePk) } ?? []
         return Set(gamePks)
@@ -175,13 +239,25 @@ struct MLBStatsAPI: Sendable {
         return parts.joined(separator: ", ")
     }
 
-    // MARK: - Date Formatting
+    // MARK: - Formatting
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         return f
     }()
+
+    private static func formatBytes(_ count: Int) -> String {
+        if count < 1024 { return "\(count)B" }
+        return String(format: "%.1fKB", Double(count) / 1024)
+    }
+}
+
+/// Result of a diffPatch request.
+enum DiffPatchResult {
+    case noChanges
+    case patches([[String: Any]])
+    case fullUpdate(Data) // API returned full feed instead of patches
 }
 
 // MARK: - Public Live Feed Model
@@ -290,8 +366,13 @@ private struct BroadcastAvailability: Codable {
 }
 
 private struct LiveFeedResponse: Codable {
+    let metaData: FeedMetaData?
     let gameData: FeedGameData
     let liveData: FeedLiveData
+}
+
+private struct FeedMetaData: Codable {
+    let timeStamp: String?
 }
 
 private struct FeedGameData: Codable {

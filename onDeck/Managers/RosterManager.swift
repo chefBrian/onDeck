@@ -27,19 +27,29 @@ final class RosterManager {
                 teamID: teamID
             )
 
+            // Resolve all MLB IDs in parallel
+            let resolved = await withTaskGroup(of: (FantraxAPI.FantraxPlayer, Int)?.self) { group in
+                for fp in fantraxPlayers {
+                    group.addTask {
+                        let cleanedName = NameCleaner.clean(fp.name)
+                        guard let mlbID = try? await self.mlbAPI.searchPlayer(
+                            name: cleanedName,
+                            teamName: fp.teamShortName
+                        ) else { return nil }
+                        return (fp, mlbID)
+                    }
+                }
+                var results: [(FantraxAPI.FantraxPlayer, Int)] = []
+                for await result in group {
+                    if let result { results.append(result) }
+                }
+                return results
+            }
+
             var resolvedPlayers: [Int: Player] = [:] // keyed by MLB ID for dedup
 
-            for fp in fantraxPlayers {
+            for (fp, mlbID) in resolved {
                 let cleanedName = NameCleaner.clean(fp.name)
-                let teamAbbr = fp.teamShortName
-
-                guard let mlbID = try await mlbAPI.searchPlayer(
-                    name: cleanedName,
-                    teamName: teamAbbr
-                ) else {
-                    continue // Skip players we can't resolve
-                }
-
                 let positions = Self.parsePositions(fp.positions)
                 let rawPositions = Set(fp.positions.map { $0.trimmingCharacters(in: .whitespaces).uppercased() })
                 let rosterStatus = Player.RosterStatus(rawValue: fp.statusId) ?? .active
@@ -60,7 +70,7 @@ final class RosterManager {
                         rosterStatus: bestStatus
                     )
                 } else {
-                    let teamName = TeamMapping.mlbTeamName(for: teamAbbr) ?? teamAbbr
+                    let teamName = TeamMapping.mlbTeamName(for: fp.teamShortName) ?? fp.teamShortName
                     resolvedPlayers[mlbID] = Player(
                         id: mlbID,
                         name: cleanedName,

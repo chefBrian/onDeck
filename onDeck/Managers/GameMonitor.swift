@@ -18,6 +18,10 @@ final class GameMonitor {
     private var lastHomePitcherID: [Int: Int] = [:] // gamePk -> last pitcher for home team
     private var lastAwayPitcherID: [Int: Int] = [:] // gamePk -> last pitcher for away team
 
+    /// Cached raw feed data for diffPatch optimization.
+    private var cachedFeedData: [Int: Data] = [:] // gamePk -> raw JSON bytes
+    private var cachedTimecodes: [Int: String] = [:] // gamePk -> metaData.timeStamp
+
     /// Stores the last completed play description per player (for result notifications).
     var lastPlayDescriptions: [Int: String] = [:] // playerID -> description
 
@@ -63,6 +67,8 @@ final class GameMonitor {
         lastHomePitcherID.removeAll()
         lastAwayPitcherID.removeAll()
         lineupPlayerIDs.removeAll()
+        cachedFeedData.removeAll()
+        cachedTimecodes.removeAll()
         isMonitoring = false
     }
 
@@ -93,76 +99,99 @@ final class GameMonitor {
             print("[GameMonitor] Waking up, starting coordinator loop")
         }
 
-        var lastCheck = Date.now
-
         while !Task.isCancelled {
-            await pollCycle(lastCheck: lastCheck)
-            lastCheck = Date.now
+            await pollCycle()
 
             do {
-                try await Task.sleep(for: .seconds(5))
+                try await Task.sleep(for: .seconds(10))
             } catch {
                 return
             }
         }
     }
 
-    private func pollCycle(lastCheck: Date) async {
+    private func pollCycle() async {
         let activeGamePks = monitoredGames.keys.filter { gamePk in
             guard let game = monitoredGames[gamePk] else { return false }
-            // Only poll games within 15 minutes of start or already started
             return game.startTime.addingTimeInterval(-15 * 60) <= Date.now
         }
-
         guard !activeGamePks.isEmpty else { return }
 
-        // Ask which games have updated since our last check
-        let changedGamePks: Set<Int>
-        do {
-            changedGamePks = try await mlbAPI.fetchGameChanges(since: lastCheck)
-        } catch {
-            // Changes endpoint failed - fall back to fetching all active games
-            print("[GameMonitor] /game/changes error: \(error) - fetching all active games")
-            await fetchFeeds(for: activeGamePks)
-            return
-        }
+        await withTaskGroup(of: Void.self) { group in
+            for gamePk in activeGamePks {
+                guard let game = monitoredGames[gamePk] else { continue }
+                let cached = cachedFeedData[gamePk]
+                let timecode = cachedTimecodes[gamePk]
 
-        // Only fetch feeds for games we're monitoring AND that have changed
-        let gamesToFetch = activeGamePks.filter { changedGamePks.contains($0) }
-
-        if gamesToFetch.isEmpty {
-            print("[GameMonitor] No changes for monitored games (checked \(activeGamePks.count) games)")
-        } else {
-            print("[GameMonitor] \(gamesToFetch.count)/\(activeGamePks.count) games have updates")
-            await fetchFeeds(for: gamesToFetch)
+                group.addTask { [weak self] in
+                    guard let self else { return }
+                    await self.pollSingleGame(gamePk: gamePk, game: game, cachedData: cached, timecode: timecode)
+                }
+            }
         }
     }
 
-    private func fetchFeeds(for gamePks: [Int]) async {
-        await withTaskGroup(of: Void.self) { group in
-            for gamePk in gamePks {
-                guard let game = monitoredGames[gamePk] else { continue }
-                group.addTask { [weak self] in
-                    guard let self else { return }
-                    do {
-                        let feed = try await self.mlbAPI.fetchLiveFeed(gamePk: gamePk)
-                        await MainActor.run {
-                            self.processFeed(feed, gamePk: gamePk, game: game)
+    private func pollSingleGame(gamePk: Int, game: Game, cachedData: Data?, timecode: String?) async {
+        do {
+            let feed: LiveFeedData
 
-                            if feed.gameState == "Final" {
-                                let playerIDsInGame = self.rosterPlayerIDs.filter { id in
-                                    self.isPlayerInGame(playerID: id, game: game)
-                                }
-                                print("[GameMonitor] Game \(gamePk) is Final - marking done: \(playerIDsInGame)")
-                                self.stateManager?.setGameOver(playerIDs: Array(playerIDsInGame), gamePk: gamePk)
-                                self.stopMonitoring(gamePk: gamePk)
-                            }
-                        }
-                    } catch {
-                        print("[GameMonitor] Live feed error for game \(gamePk): \(error)")
+            if let cachedData, let timecode {
+                let result = try await mlbAPI.fetchDiffPatch(gamePk: gamePk, since: timecode)
+
+                switch result {
+                case .noChanges:
+                    return
+
+                case .patches(let patches):
+                    var json = try JSONSerialization.jsonObject(with: cachedData)
+                    try JSONPatch.apply(patches, to: &json)
+                    let newData = try JSONSerialization.data(withJSONObject: json)
+                    let (decoded, newTimecode) = try MLBStatsAPI.decodeLiveFeed(from: newData)
+                    feed = decoded
+                    await MainActor.run {
+                        self.cachedFeedData[gamePk] = newData
+                        if let newTimecode { self.cachedTimecodes[gamePk] = newTimecode }
+                    }
+
+                case .fullUpdate:
+                    // Temporary - API returns full state during certain game phases
+                    // Fetch clean /feed/live for reliable timecode, patches should resume next cycle
+                    let (decoded, rawData, newTimecode) = try await mlbAPI.fetchLiveFeedRaw(gamePk: gamePk)
+                    feed = decoded
+                    await MainActor.run {
+                        self.cachedFeedData[gamePk] = rawData
+                        if let newTimecode { self.cachedTimecodes[gamePk] = newTimecode }
                     }
                 }
+            } else {
+                // No cache - full fetch
+                let (decoded, rawData, newTimecode) = try await mlbAPI.fetchLiveFeedRaw(gamePk: gamePk)
+                feed = decoded
+                await MainActor.run {
+                    self.cachedFeedData[gamePk] = rawData
+                    if let newTimecode { self.cachedTimecodes[gamePk] = newTimecode }
+                }
             }
+
+            await MainActor.run {
+                self.processFeed(feed, gamePk: gamePk, game: game)
+
+                if feed.gameState == "Final" {
+                    let playerIDsInGame = self.rosterPlayerIDs.filter { id in
+                        self.isPlayerInGame(playerID: id, game: game)
+                    }
+                    print("[GameMonitor] Game \(gamePk) is Final - marking done: \(playerIDsInGame)")
+                    self.stateManager?.setGameOver(playerIDs: Array(playerIDsInGame), gamePk: gamePk)
+                    self.stopMonitoring(gamePk: gamePk)
+                }
+            }
+        } catch {
+            // Clear cache so next cycle does a full fetch
+            await MainActor.run {
+                self.cachedFeedData.removeValue(forKey: gamePk)
+                self.cachedTimecodes.removeValue(forKey: gamePk)
+            }
+            print("[GameMonitor] Error for game \(gamePk): \(error) - will full-fetch next cycle")
         }
     }
 

@@ -203,7 +203,7 @@ struct MenuBarView: View {
         return Button { openStream(for: player) } label: {
             Group {
                 if let feed = feedForPlayer(player) {
-                    HStack(alignment: .center, spacing: 10) {
+                    HStack(alignment: .center, spacing: 8) {
                         VStack(alignment: .leading, spacing: 1) {
                             HStack(spacing: 4) {
                                 if isActive {
@@ -224,7 +224,7 @@ struct MenuBarView: View {
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        HStack(alignment: .center, spacing: 5) {
+                        HStack(alignment: .center, spacing: 8) {
                             VStack(spacing: -3) {
                                 BasesDiagram(
                                     first: feed.runnerOnFirst,
@@ -238,9 +238,10 @@ struct MenuBarView: View {
                                         .font(.system(size: 11, weight: .semibold))
                                 }
                                 .foregroundStyle(.secondary)
+                                .offset(x: -2)
                             }
                             VStack(spacing: 2) {
-                                Text("\(feed.balls)-\(feed.strikes)")
+                                Text(feed.isPlayComplete || (feed.balls == 0 && feed.strikes == 0) ? " " : "\(feed.balls)-\(feed.strikes)")
                                     .font(.system(size: 11, weight: .semibold))
                                     .monospacedDigit()
                                 OutsIndicator(outs: feed.outs)
@@ -400,18 +401,20 @@ struct BasesDiagram: View {
     let third: Bool
 
     var body: some View {
-        VStack(spacing: -6) {
+        ZStack {
             diamond(filled: second)
-            HStack(spacing: 0) {
-                diamond(filled: third)
-                diamond(filled: first)
-            }
+                .offset(y: -7)
+            diamond(filled: third)
+                .offset(x: -10, y: 3)
+            diamond(filled: first)
+                .offset(x: 10, y: 3)
         }
+        .frame(width: 32, height: 22)
     }
 
     private func diamond(filled: Bool) -> some View {
         Image(systemName: filled ? "diamond.fill" : "diamond")
-            .font(.system(size: 10))
+            .font(.system(size: 12))
             .foregroundStyle(filled ? .white : .gray.opacity(0.3))
     }
 }

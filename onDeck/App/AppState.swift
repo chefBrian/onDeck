@@ -327,12 +327,9 @@ final class AppState {
         let refreshTime = earliestStart.addingTimeInterval(-15 * 60)
         let delay = refreshTime.timeIntervalSinceNow
 
-        // If already past the refresh window, fire immediately
+        // If already past the refresh window, skip - monitoring is already running
         if delay <= 0 {
-            print("[AppState] Pre-game refresh: firing immediately (first game at \(earliestStart))")
-            preGameRefreshTask = Task {
-                await resyncRoster()
-            }
+            print("[AppState] Pre-game refresh: skipping (first game at \(earliestStart) already started)")
             return
         }
 
