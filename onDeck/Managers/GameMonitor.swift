@@ -275,19 +275,6 @@ final class GameMonitor {
             }
         }
 
-        // Check if previous pitcher from our roster is no longer active (half-inning change)
-        if let prevPitcher = lastPitcherID[gamePk],
-           prevPitcher != feed.currentPitcherID,
-           rosterPlayerIDs.contains(prevPitcher) {
-            // Only set to upcoming if not already marked as substituted
-            let currentState = stateManager?.playerStates[prevPitcher]
-            if case .inactive(.substituted) = currentState {
-                // Already substituted, don't revert
-            } else {
-                stateManager?.update(playerID: prevPitcher, state: .upcoming(startTime: game.startTime))
-            }
-        }
-
         // Catch-all: check both sides using the last pitcher in each pitchers array
         // (boxscore pitchers are ordered by appearance, last = current for that side).
         // Any roster pitcher who pitched earlier but isn't the latest for their side

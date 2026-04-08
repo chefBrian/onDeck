@@ -1,5 +1,15 @@
 import SwiftUI
 
+private func battingOrderLabel(_ n: Int) -> String {
+    let suffix = switch n {
+    case 1: "st"
+    case 2: "nd"
+    case 3: "rd"
+    default: "th"
+    }
+    return "\(n)\(suffix)"
+}
+
 struct MenuBarView: View {
     let appState: AppState
     var isFloating = false
@@ -236,8 +246,8 @@ private struct LivePlayerRow: View {
                                     .fontWeight(isActive ? .semibold : .medium)
                                     .lineLimit(1)
                             }
-                            if let game, let line = statLine(gamePk: game.id) {
-                                Text(line)
+                            if let game, let text = formattedStatLine(gamePk: game.id) {
+                                Text(text)
                                     .font(.system(size: 12))
                                     .foregroundStyle(.secondary)
                                     .padding(.leading, isActive ? 10 : 0)
@@ -290,13 +300,20 @@ private struct LivePlayerRow: View {
         .buttonStyle(MenuRowButtonStyle())
     }
 
-    private func statLine(gamePk: Int) -> String? {
-        guard let feed = appState.gameMonitor.latestFeeds[gamePk],
-              let stats = feed.playerStats[player.id] else { return nil }
+    private func formattedStatLine(gamePk: Int) -> String? {
+        guard let feed = appState.gameMonitor.latestFeeds[gamePk] else { return nil }
         if player.isPitcher && !player.isHitter {
-            return stats.pitchingLine
+            return feed.playerStats[player.id]?.pitchingLine
         }
-        return stats.battingLine
+        let order = (feed.homeBattingOrder.firstIndex(of: player.id) ?? feed.awayBattingOrder.firstIndex(of: player.id))
+            .map { battingOrderLabel($0 + 1) }
+        let batting = feed.playerStats[player.id]?.battingLine
+        switch (order, batting) {
+        case let (o?, b?): return "\(o): \(b)"
+        case let (o?, nil): return o
+        case let (nil, b?): return b
+        case (nil, nil): return nil
+        }
     }
 
     private func openStream() {
@@ -360,7 +377,12 @@ private struct DonePlayerRow: View {
         if player.isPitcher && !player.isHitter {
             return stats.pitchingLine
         }
-        return stats.battingLine
+        let order = (feed.homeBattingOrder.firstIndex(of: player.id) ?? feed.awayBattingOrder.firstIndex(of: player.id))
+            .map { battingOrderLabel($0 + 1) }
+        if let batting = stats.battingLine {
+            return order.map { "\($0): \(batting)" } ?? batting
+        }
+        return nil
     }
 }
 
