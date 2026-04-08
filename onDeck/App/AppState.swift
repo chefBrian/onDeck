@@ -227,8 +227,10 @@ final class AppState {
                 }
             case .inactive(let reason):
                 switch reason {
-                case .gameOver, .substituted:
-                    done.append(player)
+                case .gameOver(let gamePk), .substituted(let gamePk):
+                    if hasStatLine(player: player, gamePk: gamePk) {
+                        done.append(player)
+                    }
                 case .dayOff:
                     break
                 }
@@ -249,6 +251,15 @@ final class AppState {
             if a.isHitter != b.isHitter { return a.isHitter }
             return false
         }
+    }
+
+    private func hasStatLine(player: Player, gamePk: Int) -> Bool {
+        guard let feed = gameMonitor.latestFeeds[gamePk],
+              let stats = feed.playerStats[player.id] else { return false }
+        if player.isPitcher && !player.isHitter {
+            return stats.pitchingLine != nil
+        }
+        return stats.battingLine != nil
     }
 
     // MARK: - Notifications
