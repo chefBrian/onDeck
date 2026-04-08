@@ -1,7 +1,8 @@
-<div align="center">
+<h1 align="center">
   <img src="onDeck/Assets.xcassets/AppIcon.appiconset/icon_256.png" width="128" alt="On Deck app icon">
-  <h1>On Deck</h1>
-</div>
+  <br>
+  On Deck
+</h1>
 
 A macOS menu bar app that monitors live MLB games and sends notifications when your fantasy baseball players (from [Fantrax](https://www.fantrax.com)) are batting or pitching.
 
