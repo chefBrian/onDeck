@@ -148,49 +148,39 @@ final class GameMonitor {
                     let newData = try JSONSerialization.data(withJSONObject: json)
                     let (decoded, newTimecode) = try MLBStatsAPI.decodeLiveFeed(from: newData)
                     feed = decoded
-                    await MainActor.run {
-                        self.cachedFeedData[gamePk] = newData
-                        if let newTimecode { self.cachedTimecodes[gamePk] = newTimecode }
-                    }
+                    cachedFeedData[gamePk] = newData
+                    if let newTimecode { cachedTimecodes[gamePk] = newTimecode }
 
                 case .fullUpdate:
                     // Temporary - API returns full state during certain game phases
                     // Fetch clean /feed/live for reliable timecode, patches should resume next cycle
                     let (decoded, rawData, newTimecode) = try await mlbAPI.fetchLiveFeedRaw(gamePk: gamePk)
                     feed = decoded
-                    await MainActor.run {
-                        self.cachedFeedData[gamePk] = rawData
-                        if let newTimecode { self.cachedTimecodes[gamePk] = newTimecode }
-                    }
+                    cachedFeedData[gamePk] = rawData
+                    if let newTimecode { cachedTimecodes[gamePk] = newTimecode }
                 }
             } else {
                 // No cache - full fetch
                 let (decoded, rawData, newTimecode) = try await mlbAPI.fetchLiveFeedRaw(gamePk: gamePk)
                 feed = decoded
-                await MainActor.run {
-                    self.cachedFeedData[gamePk] = rawData
-                    if let newTimecode { self.cachedTimecodes[gamePk] = newTimecode }
-                }
+                cachedFeedData[gamePk] = rawData
+                if let newTimecode { cachedTimecodes[gamePk] = newTimecode }
             }
 
-            await MainActor.run {
-                self.processFeed(feed, gamePk: gamePk, game: game)
+            processFeed(feed, gamePk: gamePk, game: game)
 
-                if feed.gameState == "Final" {
-                    let playerIDsInGame = self.rosterPlayerIDs.filter { id in
-                        self.isPlayerInGame(playerID: id, game: game)
-                    }
-                    print("[GameMonitor] Game \(gamePk) is Final - marking done: \(playerIDsInGame)")
-                    self.stateManager?.setGameOver(playerIDs: Array(playerIDsInGame), gamePk: gamePk)
-                    self.stopMonitoring(gamePk: gamePk)
+            if feed.gameState == "Final" {
+                let playerIDsInGame = rosterPlayerIDs.filter { id in
+                    isPlayerInGame(playerID: id, game: game)
                 }
+                print("[GameMonitor] Game \(gamePk) is Final - marking done: \(playerIDsInGame)")
+                stateManager?.setGameOver(playerIDs: Array(playerIDsInGame), gamePk: gamePk)
+                stopMonitoring(gamePk: gamePk)
             }
         } catch {
             // Clear cache so next cycle does a full fetch
-            await MainActor.run {
-                self.cachedFeedData.removeValue(forKey: gamePk)
-                self.cachedTimecodes.removeValue(forKey: gamePk)
-            }
+            cachedFeedData.removeValue(forKey: gamePk)
+            cachedTimecodes.removeValue(forKey: gamePk)
             print("[GameMonitor] Error for game \(gamePk): \(error) - will full-fetch next cycle")
         }
     }

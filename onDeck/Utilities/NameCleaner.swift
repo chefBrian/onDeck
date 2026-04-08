@@ -1,6 +1,6 @@
 import Foundation
 
-enum NameCleaner {
+nonisolated enum NameCleaner {
     /// Strips position suffixes (-P, -H, -DH) from Fantrax player names.
     /// Example: "Shohei Ohtani-P" -> "Shohei Ohtani"
     static func stripPositionSuffix(_ name: String) -> String {

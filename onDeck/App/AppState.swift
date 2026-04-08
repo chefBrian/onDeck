@@ -345,14 +345,14 @@ final class AppState {
         }
 
         print("[AppState] Pre-game refresh scheduled for \(refreshTime) (15 min before \(earliestStart))")
-        preGameRefreshTask = Task {
+        preGameRefreshTask = Task { [weak self] in
             do {
                 try await Task.sleep(for: .seconds(delay))
             } catch {
                 return // Task cancelled
             }
             print("[AppState] Pre-game refresh firing")
-            await resyncRoster()
+            await self?.resyncRoster()
         }
     }
 
@@ -360,7 +360,7 @@ final class AppState {
 
     private func scheduleDailyRefresh() {
         midnightTask?.cancel()
-        midnightTask = Task {
+        midnightTask = Task { [weak self] in
             while !Task.isCancelled {
                 let now = Date()
                 let calendar = Calendar.current
@@ -383,7 +383,7 @@ final class AppState {
                 } catch {
                     return
                 }
-                await resyncRoster()
+                await self?.resyncRoster()
             }
         }
     }
