@@ -486,13 +486,34 @@ struct FooterButtons: View {
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
-        HStack {
+        HStack(spacing: 12) {
             Button {
+                dismissMenu()
+                NSApplication.shared.activate()
                 openSettings()
             } label: {
-                Text("Settings...")
+                Label("Settings", systemImage: "gear")
+            }
+            if let leagueID = appState.parsedLeagueID {
+                Button {
+                    dismissMenu()
+                    if let url = URL(string: "https://www.fantrax.com/fantasy/league/\(leagueID)/home") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    Label("Fantrax", systemImage: "trophy")
+                }
             }
             Button {
+                dismissMenu()
+                if let url = URL(string: "https://github.com/chefBrian/onDeck") {
+                    NSWorkspace.shared.open(url)
+                }
+            } label: {
+                Label("GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
+            }
+            Button {
+                dismissMenu()
                 FloatingPanel.shared.toggle(appState: appState)
             } label: {
                 Image(systemName: FloatingPanel.shared.isShowing ? "pip.exit" : "pip.enter")
@@ -501,7 +522,7 @@ struct FooterButtons: View {
             Button {
                 NSApplication.shared.terminate(nil)
             } label: {
-                Text("Quit")
+                Label("Quit", systemImage: "power")
             }
         }
         .buttonStyle(MenuRowButtonStyle())
@@ -509,6 +530,15 @@ struct FooterButtons: View {
         .font(.caption)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+
+    private func dismissMenu() {
+        NSApp.keyWindow?.close()
+        DispatchQueue.main.async {
+            if NSApp.keyWindow == nil {
+                NSApp.deactivate()
+            }
+        }
     }
 }
 
