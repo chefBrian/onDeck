@@ -6,27 +6,8 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXContainerItemProxy section */
-		D3D9EEBA2F84A3D100B48EC6 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = D3D9EEA42F84A3D000B48EC6 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = D3D9EEAB2F84A3D000B48EC6;
-			remoteInfo = onDeck;
-		};
-		D3D9EEC42F84A3D100B48EC6 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = D3D9EEA42F84A3D000B48EC6 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = D3D9EEAB2F84A3D000B48EC6;
-			remoteInfo = onDeck;
-		};
-/* End PBXContainerItemProxy section */
-
 /* Begin PBXFileReference section */
 		D3D9EEAC2F84A3D000B48EC6 /* onDeck.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = onDeck.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		D3D9EEB92F84A3D100B48EC6 /* onDeckTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = onDeckTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		D3D9EEC32F84A3D100B48EC6 /* onDeckUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = onDeckUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -35,34 +16,10 @@
 			path = onDeck;
 			sourceTree = "<group>";
 		};
-		D3D9EEBC2F84A3D100B48EC6 /* onDeckTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = onDeckTests;
-			sourceTree = "<group>";
-		};
-		D3D9EEC62F84A3D100B48EC6 /* onDeckUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = onDeckUITests;
-			sourceTree = "<group>";
-		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		D3D9EEA92F84A3D000B48EC6 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		D3D9EEB62F84A3D100B48EC6 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		D3D9EEC02F84A3D100B48EC6 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -76,8 +33,6 @@
 			isa = PBXGroup;
 			children = (
 				D3D9EEAE2F84A3D000B48EC6 /* onDeck */,
-				D3D9EEBC2F84A3D100B48EC6 /* onDeckTests */,
-				D3D9EEC62F84A3D100B48EC6 /* onDeckUITests */,
 				D3D9EEAD2F84A3D000B48EC6 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -86,8 +41,6 @@
 			isa = PBXGroup;
 			children = (
 				D3D9EEAC2F84A3D000B48EC6 /* onDeck.app */,
-				D3D9EEB92F84A3D100B48EC6 /* onDeckTests.xctest */,
-				D3D9EEC32F84A3D100B48EC6 /* onDeckUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -117,52 +70,6 @@
 			productReference = D3D9EEAC2F84A3D000B48EC6 /* onDeck.app */;
 			productType = "com.apple.product-type.application";
 		};
-		D3D9EEB82F84A3D100B48EC6 /* onDeckTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = D3D9EED02F84A3D100B48EC6 /* Build configuration list for PBXNativeTarget "onDeckTests" */;
-			buildPhases = (
-				D3D9EEB52F84A3D100B48EC6 /* Sources */,
-				D3D9EEB62F84A3D100B48EC6 /* Frameworks */,
-				D3D9EEB72F84A3D100B48EC6 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				D3D9EEBB2F84A3D100B48EC6 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				D3D9EEBC2F84A3D100B48EC6 /* onDeckTests */,
-			);
-			name = onDeckTests;
-			packageProductDependencies = (
-			);
-			productName = onDeckTests;
-			productReference = D3D9EEB92F84A3D100B48EC6 /* onDeckTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
-		D3D9EEC22F84A3D100B48EC6 /* onDeckUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = D3D9EED32F84A3D100B48EC6 /* Build configuration list for PBXNativeTarget "onDeckUITests" */;
-			buildPhases = (
-				D3D9EEBF2F84A3D100B48EC6 /* Sources */,
-				D3D9EEC02F84A3D100B48EC6 /* Frameworks */,
-				D3D9EEC12F84A3D100B48EC6 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				D3D9EEC52F84A3D100B48EC6 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				D3D9EEC62F84A3D100B48EC6 /* onDeckUITests */,
-			);
-			name = onDeckUITests;
-			packageProductDependencies = (
-			);
-			productName = onDeckUITests;
-			productReference = D3D9EEC32F84A3D100B48EC6 /* onDeckUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -175,14 +82,6 @@
 				TargetAttributes = {
 					D3D9EEAB2F84A3D000B48EC6 = {
 						CreatedOnToolsVersion = 26.4;
-					};
-					D3D9EEB82F84A3D100B48EC6 = {
-						CreatedOnToolsVersion = 26.4;
-						TestTargetID = D3D9EEAB2F84A3D000B48EC6;
-					};
-					D3D9EEC22F84A3D100B48EC6 = {
-						CreatedOnToolsVersion = 26.4;
-						TestTargetID = D3D9EEAB2F84A3D000B48EC6;
 					};
 				};
 			};
@@ -201,28 +100,12 @@
 			projectRoot = "";
 			targets = (
 				D3D9EEAB2F84A3D000B48EC6 /* onDeck */,
-				D3D9EEB82F84A3D100B48EC6 /* onDeckTests */,
-				D3D9EEC22F84A3D100B48EC6 /* onDeckUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		D3D9EEAA2F84A3D000B48EC6 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		D3D9EEB72F84A3D100B48EC6 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		D3D9EEC12F84A3D100B48EC6 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -239,34 +122,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		D3D9EEB52F84A3D100B48EC6 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		D3D9EEBF2F84A3D100B48EC6 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin PBXTargetDependency section */
-		D3D9EEBB2F84A3D100B48EC6 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = D3D9EEAB2F84A3D000B48EC6 /* onDeck */;
-			targetProxy = D3D9EEBA2F84A3D100B48EC6 /* PBXContainerItemProxy */;
-		};
-		D3D9EEC52F84A3D100B48EC6 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = D3D9EEAB2F84A3D000B48EC6 /* onDeck */;
-			targetProxy = D3D9EEC42F84A3D100B48EC6 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		D3D9EECB2F84A3D100B48EC6 /* Debug */ = {
@@ -453,82 +309,6 @@
 			};
 			name = Release;
 		};
-		D3D9EED12F84A3D100B48EC6 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.3;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.bjc.onDeckTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/onDeck.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/onDeck";
-			};
-			name = Debug;
-		};
-		D3D9EED22F84A3D100B48EC6 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.3;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.bjc.onDeckTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/onDeck.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/onDeck";
-			};
-			name = Release;
-		};
-		D3D9EED42F84A3D100B48EC6 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.bjc.onDeckUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = onDeck;
-			};
-			name = Debug;
-		};
-		D3D9EED52F84A3D100B48EC6 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.bjc.onDeckUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = onDeck;
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -546,24 +326,6 @@
 			buildConfigurations = (
 				D3D9EECE2F84A3D100B48EC6 /* Debug */,
 				D3D9EECF2F84A3D100B48EC6 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		D3D9EED02F84A3D100B48EC6 /* Build configuration list for PBXNativeTarget "onDeckTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				D3D9EED12F84A3D100B48EC6 /* Debug */,
-				D3D9EED22F84A3D100B48EC6 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		D3D9EED32F84A3D100B48EC6 /* Build configuration list for PBXNativeTarget "onDeckUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				D3D9EED42F84A3D100B48EC6 /* Debug */,
-				D3D9EED52F84A3D100B48EC6 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

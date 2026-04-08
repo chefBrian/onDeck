@@ -2,7 +2,7 @@
 
 A macOS menu bar app that monitors live MLB games and sends notifications when your fantasy baseball players (from [Fantrax](https://www.fantrax.com)) are batting or pitching.
 
-<img src="assets/popout.png" width="280" alt="On Deck floating panel showing live player stats">
+<img src="screenshots/popout.png" width="280" alt="On Deck floating panel showing live player stats">
 
 ## Features
 
