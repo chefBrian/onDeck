@@ -330,11 +330,7 @@ private struct LivePlayerRow: View {
                                 case .order:
                                     EmptyView()
                                 case nil:
-                                    if !isInLineup {
-                                        Circle()
-                                            .fill(.red)
-                                            .frame(width: 6, height: 6)
-                                    }
+                                    EmptyView()
                                 }
                                 Text(player.name)
                                     .fontWeight(isActive ? .semibold : .medium)
@@ -408,7 +404,7 @@ private struct LivePlayerRow: View {
         case .atBat, nil: nil
         case .onDeck: "On Deck"
         case .dueUp: "In Hole"
-        case .order(let n): "#\(n)"
+        case .order: nil
         }
         switch (prefix, batting) {
         case let (p?, b?): return "\(p) · \(b)"
@@ -474,7 +470,7 @@ private struct UpcomingPlayerRow: View {
                 case .battingOrder(let n):
                     Text("\(n)")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.green)
+                        .foregroundStyle(.secondary)
                 case .inLineup:
                     Image(systemName: "checkmark")
                         .font(.system(size: 9, weight: .bold))
@@ -483,7 +479,7 @@ private struct UpcomingPlayerRow: View {
                     EmptyView()
                 }
             }
-            .frame(width: 12, alignment: .center)
+            .frame(width: 14, alignment: .center)
             Text(player.name)
             Spacer()
             if case .upcoming(let startTime) = appState.stateManager.playerStates[player.id] {
