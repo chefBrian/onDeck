@@ -12,7 +12,7 @@ A macOS menu bar app that monitors live MLB games and sends notifications when y
 
 ## Features
 
-- **Live game tracking** - Monitors active MLB games via REST polling (every 5s)
+- **Live game tracking** - Monitors active MLB games via incremental diffPatch updates (every 10s), falling back to full fetches only during game phase transitions
 - **At-bat notifications** - Get alerted when your player steps up to bat or takes the mound
 - **Result notifications** - See at-bat and pitching results as they happen
 - **Menu bar scoreboard** - Live scores, count, bases, outs, and inning for each player's game
@@ -40,6 +40,6 @@ A macOS menu bar app that monitors live MLB games and sends notifications when y
 - Swift 6 / SwiftUI
 - MenuBarExtra for the menu bar interface
 - `@Observable` + Swift concurrency
-- MLB Stats API (REST polling)
+- MLB Stats API (incremental diffPatch polling)
 - Fantrax API for roster data
 - UserNotifications for alerts
