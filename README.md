@@ -19,6 +19,7 @@ A macOS menu bar app that monitors live MLB games and sends notifications when y
 - **Stat lines** - Batting and pitching lines update in real time
 - **Floating panel** - Pin the player list as an always-on-top window
 - **Stream links** - Click a player row to jump straight to the game stream
+- **Lineup status** - Shows batting order position or not-in-lineup indicator, with pre-game checks at 2h/1h/30m before first pitch
 - **Bench filtering** - Option to hide bench players from the roster
 - **Daily auto-refresh** - Roster and schedule re-sync every morning
 
