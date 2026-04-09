@@ -378,6 +378,7 @@ final class AppState {
     // MARK: - Sleep/Wake & Unlock Recovery
 
     private func setupSystemResumeHandler() {
+        print("[AppState] Registering system resume observers")
         let center = NSWorkspace.shared.notificationCenter
         let handler: (Notification) -> Void = { [weak self] notification in
             guard let self else { return }
@@ -388,12 +389,14 @@ final class AppState {
         }
         center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main, using: handler)
         center.addObserver(forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: .main, using: handler)
+        DistributedNotificationCenter.default().addObserver(forName: NSNotification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main, using: handler)
+        print("[AppState] System resume observers registered (wake, session, screen unlock)")
     }
 
     private func handleSystemResume() async {
-        // Debounce: skip if recovery ran within the last 2 seconds
+        // Debounce: skip if recovery ran within the last 30 seconds
         let now = Date()
-        guard now.timeIntervalSince(lastResumeTime) > 2 else {
+        guard now.timeIntervalSince(lastResumeTime) > 30 else {
             print("[AppState] Resume debounced (already recovered recently)")
             return
         }
