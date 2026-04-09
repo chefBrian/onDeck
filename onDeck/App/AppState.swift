@@ -81,10 +81,12 @@ final class AppState {
     private var preGameRefreshTask: Task<Void, Never>?
     private var hasStarted = false
     private var notifiedPitcherIDs: Set<Int> = []
+    private var lastResumeTime: Date = .distantPast
 
     init() {
         gameMonitor.configure(stateManager: stateManager)
         setupStateChangeHandler()
+        setupSystemResumeHandler()
         Task {
             await start()
             if alwaysOpenPopout && !FloatingPanel.shared.isShowing {
@@ -371,6 +373,37 @@ final class AppState {
             print("[AppState] Pre-game refresh firing")
             await self?.resyncRoster()
         }
+    }
+
+    // MARK: - Sleep/Wake & Unlock Recovery
+
+    private func setupSystemResumeHandler() {
+        let center = NSWorkspace.shared.notificationCenter
+        let handler: (Notification) -> Void = { [weak self] notification in
+            guard let self else { return }
+            print("[AppState] System resume: \(notification.name.rawValue)")
+            Task { @MainActor in
+                await self.handleSystemResume()
+            }
+        }
+        center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main, using: handler)
+        center.addObserver(forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: .main, using: handler)
+    }
+
+    private func handleSystemResume() async {
+        // Debounce: skip if recovery ran within the last 2 seconds
+        let now = Date()
+        guard now.timeIntervalSince(lastResumeTime) > 2 else {
+            print("[AppState] Resume debounced (already recovered recently)")
+            return
+        }
+        lastResumeTime = now
+
+        guard !rosterURL.isEmpty, effectiveTeamID != nil else { return }
+
+        print("[AppState] Recovering from system resume - clearing caches and resyncing")
+        gameMonitor.clearCaches()
+        await resyncRoster()
     }
 
     // MARK: - Daily Refresh (8 AM)
