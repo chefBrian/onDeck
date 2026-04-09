@@ -33,7 +33,7 @@ struct MLBStatsAPI: Sendable {
 
     func fetchSchedule(date: Date) async throws -> [Game] {
         let dateString = Self.dateFormatter.string(from: date)
-        let url = URL(string: "https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=\(dateString)&hydrate=team,broadcasts,probablePitcher")!
+        let url = URL(string: "https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=\(dateString)&hydrate=team,broadcasts,probablePitcher,lineups")!
         let (data, _) = try await URLSession.shared.data(from: url)
         print("[MLB API] GET /schedule date=\(dateString) \(Self.formatBytes(data.count))")
         let response = try JSONDecoder().decode(ScheduleResponse.self, from: data)
@@ -62,7 +62,9 @@ struct MLBStatsAPI: Sendable {
                     startTime: startTime,
                     homeProbablePitcherID: game.teams.home.probablePitcher?.id,
                     awayProbablePitcherID: game.teams.away.probablePitcher?.id,
-                    broadcasts: broadcasts
+                    broadcasts: broadcasts,
+                    homeLineup: game.lineups?.homePlayers?.map(\.id) ?? [],
+                    awayLineup: game.lineups?.awayPlayers?.map(\.id) ?? []
                 )
             }
         } ?? []
@@ -164,9 +166,9 @@ struct MLBStatsAPI: Sendable {
             balls: currentPlay?.count?.balls ?? 0,
             strikes: currentPlay?.count?.strikes ?? 0,
             outs: currentPlay?.count?.outs ?? 0,
-            runnerOnFirst: offense?.first != nil,
-            runnerOnSecond: offense?.second != nil,
-            runnerOnThird: offense?.third != nil,
+            runnerOnFirst: offense?.first?.id,
+            runnerOnSecond: offense?.second?.id,
+            runnerOnThird: offense?.third?.id,
             isPlayComplete: currentPlay?.about.isComplete ?? false,
             lastPlayEvent: currentPlay?.result?.event,
             lastPlayDescription: currentPlay?.result?.description,
@@ -219,7 +221,7 @@ struct MLBStatsAPI: Sendable {
         guard let b = batting, let ab = b.atBats else { return nil }
         let hasActivity = ab > 0 || (b.baseOnBalls ?? 0) > 0 || (b.stolenBases ?? 0) > 0
         guard hasActivity else { return nil }
-        var line = "\(b.hits ?? 0)/\(ab)"
+        var line = "\(b.hits ?? 0)-\(ab)"
         var extras: [String] = []
         if let v = b.doubles, v > 0 { extras.append(v > 1 ? "\(v) 2B" : "2B") }
         if let v = b.triples, v > 0 { extras.append(v > 1 ? "\(v) 3B" : "3B") }
@@ -228,7 +230,7 @@ struct MLBStatsAPI: Sendable {
         if let v = b.runs, v > 0 { extras.append("\(v) R") }
         if let v = b.baseOnBalls, v > 0 { extras.append(v > 1 ? "\(v) BB" : "BB") }
         if let v = b.stolenBases, v > 0 { extras.append(v > 1 ? "\(v) SB" : "SB") }
-        if !extras.isEmpty { line += " " + extras.joined(separator: ", ") }
+        if !extras.isEmpty { line += " · " + extras.joined(separator: ", ") }
         return line
     }
 
@@ -282,9 +284,9 @@ struct LiveFeedData: Sendable {
     let balls: Int
     let strikes: Int
     let outs: Int
-    let runnerOnFirst: Bool
-    let runnerOnSecond: Bool
-    let runnerOnThird: Bool
+    let runnerOnFirst: Int?
+    let runnerOnSecond: Int?
+    let runnerOnThird: Int?
     let isPlayComplete: Bool
     let lastPlayEvent: String?
     let lastPlayDescription: String?
@@ -331,6 +333,16 @@ private struct ScheduleGame: Codable {
     let status: ScheduleGameStatus
     let teams: ScheduleGameTeams
     let broadcasts: [ScheduleBroadcast]?
+    let lineups: ScheduleLineups?
+}
+
+private struct ScheduleLineups: Codable {
+    let homePlayers: [ScheduleLineupPlayer]?
+    let awayPlayers: [ScheduleLineupPlayer]?
+}
+
+private struct ScheduleLineupPlayer: Codable {
+    let id: Int
 }
 
 private struct ScheduleGameStatus: Codable {

@@ -1,25 +1,71 @@
 import SwiftUI
 
-private func battingOrderLabel(_ n: Int) -> String {
-    let suffix = switch n {
-    case 1: "st"
-    case 2: "nd"
-    case 3: "rd"
-    default: "th"
+private enum BattingProximity {
+    case atBat
+    case onDeck
+    case dueUp
+    case order(Int)
+
+    var sortKey: Int {
+        switch self {
+        case .atBat: 0
+        case .onDeck: 1
+        case .dueUp: 2
+        case .order: 3
+        }
     }
-    return "\(n)\(suffix)"
+}
+
+private func battingProximity(for player: Player, in appState: AppState) -> BattingProximity? {
+    guard let game = appState.games.first(where: { game in
+        game.homeTeam.contains(player.team) || game.awayTeam.contains(player.team)
+            || player.team.contains(game.homeTeam) || player.team.contains(game.awayTeam)
+    }),
+        let feed = appState.gameMonitor.latestFeeds[game.id] else { return nil }
+    if player.isPitcher && !player.isHitter { return nil }
+
+    let isHome: Bool
+    if feed.homeBattingOrder.contains(player.id) {
+        isHome = true
+    } else if feed.awayBattingOrder.contains(player.id) {
+        isHome = false
+    } else {
+        return nil
+    }
+
+    let battingOrder = isHome ? feed.homeBattingOrder : feed.awayBattingOrder
+    guard let playerIndex = battingOrder.firstIndex(of: player.id) else { return nil }
+
+    let teamIsBatting = (isHome && feed.inningHalf == "Bottom") || (!isHome && feed.inningHalf == "Top")
+
+    guard teamIsBatting, let currentBatterID = feed.currentBatterID,
+          let currentIndex = battingOrder.firstIndex(of: currentBatterID) else {
+        return .order(playerIndex + 1)
+    }
+
+    let count = battingOrder.count
+    if player.id == currentBatterID {
+        return .atBat
+    } else if (currentIndex + 1) % count == playerIndex {
+        return .onDeck
+    } else if (currentIndex + 2) % count == playerIndex {
+        return .dueUp
+    } else {
+        return .order(playerIndex + 1)
+    }
 }
 
 struct MenuBarView: View {
     let appState: AppState
     var isFloating = false
+    @Namespace private var playerAnimation
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ActiveSection(appState: appState, isFloating: isFloating)
-            InGameSection(appState: appState, isFloating: isFloating)
-            UpcomingSection(appState: appState, isFloating: isFloating)
-            DoneSection(appState: appState, isFloating: isFloating)
+            ActiveSection(appState: appState, isFloating: isFloating, namespace: playerAnimation)
+            InGameSection(appState: appState, isFloating: isFloating, namespace: playerAnimation)
+            UpcomingSection(appState: appState, isFloating: isFloating, namespace: playerAnimation)
+            DoneSection(appState: appState, isFloating: isFloating, namespace: playerAnimation)
             EmptySection(appState: appState, isFloating: isFloating)
             ErrorSection(appState: appState)
             if !isFloating {
@@ -27,7 +73,6 @@ struct MenuBarView: View {
             }
         }
         .frame(width: 300)
-        .transaction { $0.animation = nil }
     }
 }
 
@@ -36,12 +81,14 @@ struct MenuBarView: View {
 private struct ActiveSection: View {
     let appState: AppState
     let isFloating: Bool
+    var namespace: Namespace.ID
 
     var body: some View {
         if !appState.activePlayers.isEmpty {
             SectionHeader(title: "Active Now", showClose: true, isFloating: isFloating, appState: appState)
             ForEach(appState.activePlayers) { player in
                 LivePlayerRow(player: player, appState: appState)
+                    .matchedGeometryEffect(id: player.id, in: namespace)
             }
             SectionDivider()
         }
@@ -51,6 +98,7 @@ private struct ActiveSection: View {
 private struct InGameSection: View {
     let appState: AppState
     let isFloating: Bool
+    var namespace: Namespace.ID
 
     var body: some View {
         if !appState.inGamePlayers.isEmpty {
@@ -60,9 +108,15 @@ private struct InGameSection: View {
                 isFloating: isFloating,
                 appState: appState
             )
-            ForEach(appState.inGamePlayers) { player in
+            ForEach(appState.inGamePlayers.sorted { a, b in
+                let pa = battingProximity(for: a, in: appState)?.sortKey ?? 3
+                let pb = battingProximity(for: b, in: appState)?.sortKey ?? 3
+                return pa < pb
+            }) { player in
                 LivePlayerRow(player: player, appState: appState)
+                    .matchedGeometryEffect(id: player.id, in: namespace)
             }
+            .animation(.easeInOut(duration: 0.3), value: appState.inGamePlayers.map { battingProximity(for: $0, in: appState)?.sortKey ?? 3 })
             SectionDivider()
         }
     }
@@ -71,6 +125,7 @@ private struct InGameSection: View {
 private struct UpcomingSection: View {
     let appState: AppState
     let isFloating: Bool
+    var namespace: Namespace.ID
 
     var body: some View {
         if !appState.upcomingPlayers.isEmpty {
@@ -82,6 +137,7 @@ private struct UpcomingSection: View {
             )
             ForEach(appState.upcomingPlayers) { player in
                 UpcomingPlayerRow(player: player, appState: appState)
+                    .matchedGeometryEffect(id: player.id, in: namespace)
             }
             if !appState.donePlayers.isEmpty {
                 SectionDivider()
@@ -97,6 +153,7 @@ private struct UpcomingSection: View {
 private struct DoneSection: View {
     let appState: AppState
     let isFloating: Bool
+    var namespace: Namespace.ID
 
     var body: some View {
         if !appState.donePlayers.isEmpty {
@@ -104,6 +161,7 @@ private struct DoneSection: View {
             SectionHeader(title: "Done", showClose: showClose, isFloating: isFloating, appState: appState)
             ForEach(appState.donePlayers) { player in
                 DonePlayerRow(player: player, appState: appState)
+                    .matchedGeometryEffect(id: player.id, in: namespace)
             }
             if isFloating {
                 Spacer().frame(height: 8)
@@ -230,6 +288,25 @@ private struct LivePlayerRow: View {
         return appState.gameMonitor.latestFeeds[game.id]
     }
 
+    private var proximity: BattingProximity? {
+        battingProximity(for: player, in: appState)
+    }
+
+    private var isInLineup: Bool {
+        guard let game else { return false }
+        guard let lineup = appState.gameMonitor.lineupPlayerIDs[game.id], !lineup.isEmpty else {
+            return true // Assume in lineup until we have data
+        }
+        return lineup.contains(player.id)
+    }
+
+    private var showsProximityDot: Bool {
+        switch proximity {
+        case .atBat, .onDeck, .dueUp: true
+        default: false
+        }
+    }
+
     var body: some View {
         Button { openStream() } label: {
             Group {
@@ -237,10 +314,27 @@ private struct LivePlayerRow: View {
                     HStack(alignment: .center, spacing: 8) {
                         VStack(alignment: .leading, spacing: 1) {
                             HStack(spacing: 4) {
-                                if isActive {
+                                switch proximity {
+                                case .atBat:
                                     Circle()
                                         .fill(.green)
                                         .frame(width: 6, height: 6)
+                                case .onDeck:
+                                    Circle()
+                                        .fill(.orange)
+                                        .frame(width: 6, height: 6)
+                                case .dueUp:
+                                    Circle()
+                                        .strokeBorder(.green.opacity(0.6), lineWidth: 1.5)
+                                        .frame(width: 6, height: 6)
+                                case .order:
+                                    EmptyView()
+                                case nil:
+                                    if !isInLineup {
+                                        Circle()
+                                            .fill(.red)
+                                            .frame(width: 6, height: 6)
+                                    }
                                 }
                                 Text(player.name)
                                     .fontWeight(isActive ? .semibold : .medium)
@@ -263,7 +357,8 @@ private struct LivePlayerRow: View {
                                 BasesDiagram(
                                     first: feed.runnerOnFirst,
                                     second: feed.runnerOnSecond,
-                                    third: feed.runnerOnThird
+                                    third: feed.runnerOnThird,
+                                    highlightID: player.id
                                 )
                                 HStack(spacing: 1) {
                                     Image(systemName: feed.inningHalf == "Top" ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
@@ -303,16 +398,21 @@ private struct LivePlayerRow: View {
     }
 
     private func formattedStatLine(gamePk: Int) -> String? {
+        if !isInLineup { return "Not in Lineup" }
         guard let feed = appState.gameMonitor.latestFeeds[gamePk] else { return nil }
         if player.isPitcher && !player.isHitter {
             return feed.playerStats[player.id]?.pitchingLine
         }
-        let order = (feed.homeBattingOrder.firstIndex(of: player.id) ?? feed.awayBattingOrder.firstIndex(of: player.id))
-            .map { battingOrderLabel($0 + 1) }
         let batting = feed.playerStats[player.id]?.battingLine
-        switch (order, batting) {
-        case let (o?, b?): return "\(o): \(b)"
-        case let (o?, nil): return o
+        let prefix: String? = switch proximity {
+        case .atBat, nil: nil
+        case .onDeck: "On Deck"
+        case .dueUp: "In Hole"
+        case .order(let n): "#\(n)"
+        }
+        switch (prefix, batting) {
+        case let (p?, b?): return "\(p) · \(b)"
+        case let (p?, nil): return p
         case let (nil, b?): return b
         case (nil, nil): return nil
         }
@@ -329,8 +429,61 @@ private struct UpcomingPlayerRow: View {
     let player: Player
     let appState: AppState
 
+    private var game: Game? {
+        appState.games.first { game in
+            game.homeTeam.contains(player.team) || game.awayTeam.contains(player.team)
+                || player.team.contains(game.homeTeam) || player.team.contains(game.awayTeam)
+        }
+    }
+
+    private var lineupInfo: LineupInfo {
+        guard let game,
+              let lineup = appState.gameMonitor.lineupPlayerIDs[game.id],
+              !lineup.isEmpty else { return .unknown }
+        guard lineup.contains(player.id) else { return .notInLineup }
+        // Check live feed first, then fall back to schedule lineup data
+        if let feed = appState.gameMonitor.latestFeeds[game.id] {
+            if let idx = feed.homeBattingOrder.firstIndex(of: player.id) {
+                return .battingOrder(idx + 1)
+            }
+            if let idx = feed.awayBattingOrder.firstIndex(of: player.id) {
+                return .battingOrder(idx + 1)
+            }
+        }
+        if let idx = game.homeLineup.firstIndex(of: player.id) {
+            return .battingOrder(idx + 1)
+        }
+        if let idx = game.awayLineup.firstIndex(of: player.id) {
+            return .battingOrder(idx + 1)
+        }
+        return .inLineup
+    }
+
+    private enum LineupInfo {
+        case unknown, notInLineup, inLineup, battingOrder(Int)
+    }
+
     var body: some View {
-        HStack {
+        HStack(spacing: 4) {
+            Group {
+                switch lineupInfo {
+                case .notInLineup:
+                    Circle()
+                        .fill(.red)
+                        .frame(width: 6, height: 6)
+                case .battingOrder(let n):
+                    Text("\(n)")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.green)
+                case .inLineup:
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.green)
+                case .unknown:
+                    EmptyView()
+                }
+            }
+            .frame(width: 12, alignment: .center)
             Text(player.name)
             Spacer()
             if case .upcoming(let startTime) = appState.stateManager.playerStates[player.id] {
@@ -440,26 +593,29 @@ struct FooterButtonStyle: ButtonStyle {
 // MARK: - Bases Diamond
 
 struct BasesDiagram: View {
-    let first: Bool
-    let second: Bool
-    let third: Bool
+    let first: Int?
+    let second: Int?
+    let third: Int?
+    var highlightID: Int? = nil
 
     var body: some View {
         ZStack {
-            diamond(filled: second)
+            diamond(runnerID: second)
                 .offset(y: -7)
-            diamond(filled: third)
+            diamond(runnerID: third)
                 .offset(x: -10.5, y: 3.5)
-            diamond(filled: first)
+            diamond(runnerID: first)
                 .offset(x: 10.5, y: 3.5)
         }
         .frame(width: 35, height: 24)
     }
 
-    private func diamond(filled: Bool) -> some View {
-        Image(systemName: filled ? "diamond.fill" : "diamond")
+    private func diamond(runnerID: Int?) -> some View {
+        let occupied = runnerID != nil
+        let highlighted = occupied && runnerID == highlightID
+        return Image(systemName: occupied ? "diamond.fill" : "diamond")
             .font(.system(size: 14))
-            .foregroundStyle(filled ? .white : .gray.opacity(0.3))
+            .foregroundStyle(highlighted ? .green : occupied ? .white : .gray.opacity(0.3))
     }
 }
 

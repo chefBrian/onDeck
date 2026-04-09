@@ -22,6 +22,12 @@ final class GameMonitor {
     private var cachedFeedData: [Int: Data] = [:] // gamePk -> raw JSON bytes
     private var cachedTimecodes: [Int: String] = [:] // gamePk -> metaData.timeStamp
 
+    /// Pre-game milestone times (seconds before game start) for one-shot lineup checks.
+    private static let preGameMilestones: [TimeInterval] = [2 * 3600, 1 * 3600, 30 * 60]
+
+    /// Tracks which pre-game milestones have been fetched per game.
+    private var completedMilestones: [Int: Set<TimeInterval>] = [:] // gamePk -> milestone intervals
+
     /// Stores the last completed play description per player (for result notifications).
     var lastPlayDescriptions: [Int: String] = [:] // playerID -> description
 
@@ -69,6 +75,7 @@ final class GameMonitor {
         lineupPlayerIDs.removeAll()
         cachedFeedData.removeAll()
         cachedTimecodes.removeAll()
+        completedMilestones.removeAll()
         isMonitoring = false
     }
 
@@ -93,40 +100,63 @@ final class GameMonitor {
     // MARK: - Centralized Polling
 
     private func coordinatePolling() async {
-        // Wait until the earliest game is within 15 minutes of starting
-        let earliestStart = monitoredGames.values.map(\.startTime).min() ?? .now
-        let pollStart = earliestStart.addingTimeInterval(-15 * 60)
-        let delay = pollStart.timeIntervalSinceNow
-        if delay > 0 {
-            print("[GameMonitor] Earliest game at \(earliestStart) - sleeping until \(pollStart)")
-            do {
-                try await Task.sleep(for: .seconds(delay), tolerance: .seconds(30))
-            } catch {
-                return
-            }
-            print("[GameMonitor] Waking up, starting coordinator loop")
-        }
-
         while !Task.isCancelled {
+            let sleepDuration = nextEventDelay()
+            if sleepDuration > 0 {
+                print("[GameMonitor] Sleeping \(Int(sleepDuration))s until next event")
+                do {
+                    try await Task.sleep(for: .seconds(sleepDuration), tolerance: .seconds(sleepDuration > 60 ? 30 : 2))
+                } catch {
+                    return
+                }
+            }
+
             await pollCycle()
 
-            do {
-                try await Task.sleep(for: .seconds(10), tolerance: .seconds(2))
-            } catch {
-                return
+            // Once any game is in active polling range, switch to 10s loop
+            let hasActiveGames = monitoredGames.values.contains {
+                $0.startTime.addingTimeInterval(-15 * 60) <= Date.now
+            }
+            if hasActiveGames {
+                do {
+                    try await Task.sleep(for: .seconds(10), tolerance: .seconds(2))
+                } catch {
+                    return
+                }
             }
         }
     }
 
     private func pollCycle() async {
-        let activeGamePks = monitoredGames.keys.filter { gamePk in
-            guard let game = monitoredGames[gamePk] else { return false }
-            return game.startTime.addingTimeInterval(-15 * 60) <= Date.now
+        var gamesToPoll: Set<Int> = []
+
+        // Active games: within 15 min of start - poll every cycle
+        for (gamePk, game) in monitoredGames {
+            if game.startTime.addingTimeInterval(-15 * 60) <= Date.now {
+                gamesToPoll.insert(gamePk)
+            }
         }
-        guard !activeGamePks.isEmpty else { return }
+
+        // Pre-game milestone checks: one-shot fetch when a milestone is reached
+        for (gamePk, game) in monitoredGames {
+            let timeUntilStart = game.startTime.timeIntervalSinceNow
+            guard timeUntilStart > 15 * 60 else { continue } // Already active
+
+            for milestone in Self.preGameMilestones {
+                if timeUntilStart <= milestone,
+                   !(completedMilestones[gamePk]?.contains(milestone) ?? false) {
+                    completedMilestones[gamePk, default: []].insert(milestone)
+                    gamesToPoll.insert(gamePk)
+                    print("[GameMonitor] Pre-game lineup check for game \(gamePk) (\(Int(milestone / 60))min milestone)")
+                    break
+                }
+            }
+        }
+
+        guard !gamesToPoll.isEmpty else { return }
 
         await withTaskGroup(of: Void.self) { group in
-            for gamePk in activeGamePks {
+            for gamePk in gamesToPoll {
                 guard let game = monitoredGames[gamePk] else { continue }
                 let cached = cachedFeedData[gamePk]
                 let timecode = cachedTimecodes[gamePk]
@@ -220,7 +250,7 @@ final class GameMonitor {
             homeTeamID: feed.homeTeamID, awayTeamID: feed.awayTeamID,
             homeScore: feed.homeScore, awayScore: feed.awayScore,
             balls: feed.balls, strikes: feed.strikes, outs: feed.outs,
-            runnerOnFirst: feed.runnerOnFirst, runnerOnSecond: feed.runnerOnSecond, runnerOnThird: feed.runnerOnThird
+            runnerOnFirst: feed.runnerOnFirst != nil, runnerOnSecond: feed.runnerOnSecond != nil, runnerOnThird: feed.runnerOnThird != nil
         )
 
         func makeContext(role: PlayerState.ActiveRole) -> PlayerState.GameContext {
@@ -334,6 +364,37 @@ final class GameMonitor {
         guard let player = rosterPlayers[playerID] else { return false }
         return game.homeTeam.contains(player.team) || game.awayTeam.contains(player.team)
             || player.team.contains(game.homeTeam) || player.team.contains(game.awayTeam)
+    }
+
+    /// Returns seconds until the next event (milestone or active polling window).
+    /// Returns 0 if an event is ready now.
+    private func nextEventDelay() -> TimeInterval {
+        var nextTime: Date?
+
+        for game in monitoredGames.values {
+            // Active polling starts 15 min before game
+            let activeStart = game.startTime.addingTimeInterval(-15 * 60)
+            if activeStart <= Date.now { return 0 }
+
+            // Check uncompleted milestones
+            let completed = completedMilestones[game.id] ?? []
+            for milestone in Self.preGameMilestones {
+                let milestoneTime = game.startTime.addingTimeInterval(-milestone)
+                if milestoneTime <= Date.now && !completed.contains(milestone) { return 0 }
+                if milestoneTime > Date.now {
+                    if nextTime == nil || milestoneTime < nextTime! {
+                        nextTime = milestoneTime
+                    }
+                }
+            }
+
+            if nextTime == nil || activeStart < nextTime! {
+                nextTime = activeStart
+            }
+        }
+
+        guard let next = nextTime else { return 0 }
+        return max(0, next.timeIntervalSinceNow)
     }
 
     private func formatInning(_ feed: LiveFeedData) -> String {

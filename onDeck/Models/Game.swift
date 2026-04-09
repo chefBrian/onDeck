@@ -10,6 +10,8 @@ struct Game: Identifiable, Hashable {
     let homeProbablePitcherID: Int?
     let awayProbablePitcherID: Int?
     let broadcasts: [Broadcast]
+    let homeLineup: [Int] // batting order player IDs from schedule (empty if not yet submitted)
+    let awayLineup: [Int]
 
     struct Broadcast: Hashable {
         let callSign: String

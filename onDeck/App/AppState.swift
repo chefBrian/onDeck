@@ -174,6 +174,13 @@ final class AppState {
         gameMonitor.stopMonitoring()
         if !games.isEmpty {
             gameMonitor.startMonitoring(games: games, players: rosterManager.players)
+            // Seed lineup data from schedule (available before live feed polling starts)
+            for game in games {
+                let lineupIDs = Set(game.homeLineup + game.awayLineup)
+                if !lineupIDs.isEmpty {
+                    gameMonitor.lineupPlayerIDs[game.id] = lineupIDs
+                }
+            }
             schedulePreGameRefresh()
         }
     }
