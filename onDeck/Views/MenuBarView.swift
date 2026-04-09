@@ -254,7 +254,11 @@ private struct LivePlayerRow: View {
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        HStack(alignment: .center, spacing: 8) {
+                        HStack(alignment: .center, spacing: 16) {
+                            ScoreBlock(
+                                awayTeamID: feed.awayTeamID, awayScore: feed.awayScore,
+                                homeTeamID: feed.homeTeamID, homeScore: feed.homeScore
+                            )
                             VStack(spacing: -3) {
                                 BasesDiagram(
                                     first: feed.runnerOnFirst,
@@ -263,25 +267,23 @@ private struct LivePlayerRow: View {
                                 )
                                 HStack(spacing: 1) {
                                     Image(systemName: feed.inningHalf == "Top" ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
-                                        .font(.system(size: 7))
+                                        .font(.system(size: 8.5))
                                     Text("\(feed.inning ?? 0)")
-                                        .font(.system(size: 11, weight: .semibold))
+                                        .font(.system(size: 13, weight: .semibold))
                                 }
                                 .foregroundStyle(.secondary)
                                 .offset(x: -2)
                             }
-                            VStack(spacing: 2) {
+                            .offset(y: 2)
+                            VStack(spacing: 4) {
                                 Text(feed.isPlayComplete || (feed.balls == 0 && feed.strikes == 0) ? " " : "\(feed.balls)-\(feed.strikes)")
-                                    .font(.system(size: 11, weight: .semibold))
+                                    .font(.system(size: 12, weight: .semibold))
                                     .monospacedDigit()
                                 OutsIndicator(outs: feed.outs)
                             }
+                            .offset(y: 3)
                         }
                         .fixedSize()
-                        ScoreBlock(
-                            awayTeamID: feed.awayTeamID, awayScore: feed.awayScore,
-                            homeTeamID: feed.homeTeamID, homeScore: feed.homeScore
-                        )
                     }
                 } else {
                     HStack {
@@ -390,18 +392,18 @@ private struct ScoreBlock: View {
     var body: some View {
         VStack(alignment: .trailing, spacing: 2) {
             HStack(spacing: 6) {
+                TeamLogo(teamID: awayTeamID, size: 16)
                 Text("\(awayScore)")
                     .monospacedDigit()
-                TeamLogo(teamID: awayTeamID, size: 16)
             }
             HStack(spacing: 6) {
+                TeamLogo(teamID: homeTeamID, size: 16)
                 Text("\(homeScore)")
                     .monospacedDigit()
-                TeamLogo(teamID: homeTeamID, size: 16)
             }
         }
         .font(.system(size: 16, weight: .semibold))
-        .frame(width: 50, alignment: .trailing)
+        .fixedSize()
     }
 }
 
@@ -447,16 +449,16 @@ struct BasesDiagram: View {
             diamond(filled: second)
                 .offset(y: -7)
             diamond(filled: third)
-                .offset(x: -10, y: 3)
+                .offset(x: -10.5, y: 3.5)
             diamond(filled: first)
-                .offset(x: 10, y: 3)
+                .offset(x: 10.5, y: 3.5)
         }
-        .frame(width: 32, height: 22)
+        .frame(width: 35, height: 24)
     }
 
     private func diamond(filled: Bool) -> some View {
         Image(systemName: filled ? "diamond.fill" : "diamond")
-            .font(.system(size: 12))
+            .font(.system(size: 14))
             .foregroundStyle(filled ? .white : .gray.opacity(0.3))
     }
 }
