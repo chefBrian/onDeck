@@ -72,6 +72,14 @@ final class GameMonitor {
         isMonitoring = false
     }
 
+    /// Clears cached feed data and timecodes so the next poll cycle does full fetches.
+    /// Used after system wake when cached timecodes are stale.
+    func clearCaches() {
+        cachedFeedData.removeAll()
+        cachedTimecodes.removeAll()
+        print("[GameMonitor] Caches cleared (stale timecodes discarded)")
+    }
+
     /// Stops monitoring a specific game (e.g., when no roster players remain).
     func stopMonitoring(gamePk: Int) {
         monitoredGames.removeValue(forKey: gamePk)
