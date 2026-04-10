@@ -109,14 +109,14 @@ private struct InGameSection: View {
                 appState: appState
             )
             ForEach(appState.inGamePlayers.sorted { a, b in
-                let pa = battingProximity(for: a, in: appState)?.sortKey ?? 3
-                let pb = battingProximity(for: b, in: appState)?.sortKey ?? 3
+                let pa = battingProximity(for: a, in: appState)?.sortKey ?? 4
+                let pb = battingProximity(for: b, in: appState)?.sortKey ?? 4
                 return pa < pb
             }) { player in
                 LivePlayerRow(player: player, appState: appState)
                     .matchedGeometryEffect(id: player.id, in: namespace)
             }
-            .animation(.easeInOut(duration: 0.3), value: appState.inGamePlayers.map { battingProximity(for: $0, in: appState)?.sortKey ?? 3 })
+            .animation(.easeInOut(duration: 0.3), value: appState.inGamePlayers.map { battingProximity(for: $0, in: appState)?.sortKey ?? 4 })
             SectionDivider()
         }
     }
@@ -321,11 +321,11 @@ private struct LivePlayerRow: View {
                                         .frame(width: 6, height: 6)
                                 case .onDeck:
                                     Circle()
-                                        .fill(.orange)
+                                        .strokeBorder(.green, lineWidth: 1.5)
                                         .frame(width: 6, height: 6)
                                 case .dueUp:
                                     Circle()
-                                        .strokeBorder(.green.opacity(0.6), lineWidth: 1.5)
+                                        .strokeBorder(.orange, lineWidth: 1.5)
                                         .frame(width: 6, height: 6)
                                 case .order:
                                     EmptyView()
@@ -883,7 +883,8 @@ final class FloatingPanel {
 
     private func show(appState: AppState) {
         let content = MenuBarView(appState: appState, isFloating: true)
-            .glassEffect(in: .rect(cornerRadius: 12))
+            .background(.ultraThinMaterial.opacity(0.8))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
 
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 300, height: 500),
