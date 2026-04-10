@@ -340,6 +340,8 @@ private struct LivePlayerRow: View {
                                 Text(text)
                                     .font(.system(size: 12))
                                     .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
                                     .padding(.leading, isActive ? 10 : 0)
                             }
                         }
