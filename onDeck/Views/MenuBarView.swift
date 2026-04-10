@@ -884,8 +884,8 @@ final class FloatingPanel {
     private func show(appState: AppState) {
         let content = MenuBarView(appState: appState, isFloating: true)
             .background {
-                Color.black.opacity(0.3)
-                    .background(.ultraThinMaterial.opacity(0.7))
+                Color.black.opacity(0.25)
+                    .background(.ultraThinMaterial.opacity(0.85))
             }
             .clipShape(RoundedRectangle(cornerRadius: 12))
 
