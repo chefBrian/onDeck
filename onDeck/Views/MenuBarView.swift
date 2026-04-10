@@ -87,7 +87,7 @@ private struct ActiveSection: View {
         if !appState.activePlayers.isEmpty {
             SectionHeader(title: "Active Now", showClose: true, isFloating: isFloating, appState: appState)
             ForEach(appState.activePlayers) { player in
-                LivePlayerRow(player: player, appState: appState)
+                LivePlayerRow(player: player, appState: appState, isFloating: isFloating)
                     .matchedGeometryEffect(id: player.id, in: namespace)
             }
             SectionDivider()
@@ -113,7 +113,7 @@ private struct InGameSection: View {
                 let pb = battingProximity(for: b, in: appState)?.sortKey ?? 4
                 return pa < pb
             }) { player in
-                LivePlayerRow(player: player, appState: appState)
+                LivePlayerRow(player: player, appState: appState, isFloating: isFloating)
                     .matchedGeometryEffect(id: player.id, in: namespace)
             }
             .animation(.easeInOut(duration: 0.3), value: appState.inGamePlayers.map { battingProximity(for: $0, in: appState)?.sortKey ?? 4 })
@@ -270,6 +270,7 @@ private struct SectionDivider: View {
 private struct LivePlayerRow: View {
     let player: Player
     let appState: AppState
+    let isFloating: Bool
 
     private var isActive: Bool {
         if case .active = appState.stateManager.playerStates[player.id] { return true }
@@ -418,8 +419,18 @@ private struct LivePlayerRow: View {
 
     private func openStream() {
         guard let game else { return }
+        if !isFloating { dismissMenuBarWindow() }
         let url = StreamLinkRouter.url(for: game)
         NSWorkspace.shared.open(url)
+    }
+}
+
+private func dismissMenuBarWindow() {
+    NSApp.keyWindow?.close()
+    DispatchQueue.main.async {
+        if NSApp.keyWindow == nil {
+            NSApp.deactivate()
+        }
     }
 }
 
@@ -806,12 +817,7 @@ struct FooterButtons: View {
     }
 
     private func dismissMenu() {
-        NSApp.keyWindow?.close()
-        DispatchQueue.main.async {
-            if NSApp.keyWindow == nil {
-                NSApp.deactivate()
-            }
-        }
+        dismissMenuBarWindow()
     }
 }
 
