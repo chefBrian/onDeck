@@ -363,6 +363,7 @@ final class AppState {
                     await notificationManager.notifyPitching(
                         playerName: player.name,
                         playerID: player.id,
+                        gamePk: context.gamePk,
                         game: gameString,
                         inning: context.inning,
                         streamURL: streamURL
@@ -372,6 +373,7 @@ final class AppState {
                     await notificationManager.notifyBatting(
                         playerName: player.name,
                         playerID: player.id,
+                        gamePk: context.gamePk,
                         game: gameString,
                         inning: context.inning,
                         streamURL: streamURL
@@ -380,17 +382,24 @@ final class AppState {
             }
 
         case (.active(let context), .upcoming):
-            if context.role == .batting, let lastFeedResult = gameMonitor.lastPlayDescriptions[playerID] {
-                await notificationManager.notifyAtBatResult(
-                    playerName: player.name,
-                    playerID: player.id,
-                    description: lastFeedResult,
-                    streamURL: streamURL(for: context.gamePk)
-                )
+            switch context.role {
+            case .batting:
+                notificationManager.purgeBatting(gamePk: context.gamePk, playerID: playerID)
+                if let lastFeedResult = gameMonitor.lastPlayDescriptions[playerID] {
+                    await notificationManager.notifyAtBatResult(
+                        playerName: player.name,
+                        playerID: player.id,
+                        description: lastFeedResult,
+                        streamURL: streamURL(for: context.gamePk)
+                    )
+                }
+            case .pitching:
+                notificationManager.purgePitching(gamePk: context.gamePk, playerID: playerID)
             }
 
         case (.active(let context), .inactive(.substituted(_))):
             if context.role == .pitching {
+                notificationManager.purgePitching(gamePk: context.gamePk, playerID: playerID)
                 await notificationManager.notifyPitchingResult(
                     playerName: player.name,
                     playerID: player.id,

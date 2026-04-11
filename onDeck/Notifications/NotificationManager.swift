@@ -88,27 +88,35 @@ final class NotificationManager: Sendable {
         print("[Notifications] Purged \(ids.count) not-in-lineup notifications for game \(gamePk)")
     }
 
+    func purgeBatting(gamePk: Int, playerID: Int) {
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["batting-\(gamePk)-\(playerID)"])
+    }
+
+    func purgePitching(gamePk: Int, playerID: Int) {
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["pitching-\(gamePk)-\(playerID)"])
+    }
+
     // MARK: - Typed Notifications
 
-    func notifyBatting(playerName: String, playerID: Int, game: String, inning: String, streamURL: URL?) async {
+    func notifyBatting(playerName: String, playerID: Int, gamePk: Int, game: String, inning: String, streamURL: URL?) async {
         guard UserDefaults.standard.bool(forKey: "notifyBatting", default: true) else { return }
         await send(
             title: "\(playerName) is batting",
             body: "\(game), \(inning)",
+            identifier: "batting-\(gamePk)-\(playerID)",
             playerID: playerID,
-            clickURL: streamURL,
-            autoDismissAfter: 30
+            clickURL: streamURL
         )
     }
 
-    func notifyPitching(playerName: String, playerID: Int, game: String, inning: String, streamURL: URL?) async {
+    func notifyPitching(playerName: String, playerID: Int, gamePk: Int, game: String, inning: String, streamURL: URL?) async {
         guard UserDefaults.standard.bool(forKey: "notifyPitching", default: true) else { return }
         await send(
             title: "\(playerName) is taking the mound",
             body: "\(game), \(inning)",
+            identifier: "pitching-\(gamePk)-\(playerID)",
             playerID: playerID,
-            clickURL: streamURL,
-            autoDismissAfter: 30
+            clickURL: streamURL
         )
     }
 
