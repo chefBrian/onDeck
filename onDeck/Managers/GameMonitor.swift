@@ -37,6 +37,9 @@ final class GameMonitor {
     /// Lineup player IDs per game (batting order + pitchers).
     var lineupPlayerIDs: [Int: Set<Int>] = [:] // gamePk -> set of player IDs in lineup
 
+    /// Callback fired when `lineupPlayerIDs[gamePk]` is populated or changes.
+    var onLineupUpdate: ((Int) -> Void)?
+
     func configure(stateManager: StateManager) {
         self.stateManager = stateManager
     }
@@ -231,8 +234,9 @@ final class GameMonitor {
 
         // Track lineup (available before game goes Live)
         let lineupIDs = Set(feed.homeBattingOrder + feed.awayBattingOrder + feed.homePitchers + feed.awayPitchers)
-        if !lineupIDs.isEmpty {
+        if !lineupIDs.isEmpty && lineupPlayerIDs[gamePk] != lineupIDs {
             lineupPlayerIDs[gamePk] = lineupIDs
+            onLineupUpdate?(gamePk)
         }
 
         guard feed.gameState == "Live", feed.detailedState == "In Progress" else {

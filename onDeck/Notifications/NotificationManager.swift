@@ -9,11 +9,11 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate, Se
         completionHandler([.banner, .sound])
     }
 
-    // Open stream URL when notification is clicked
+    // Open click-through URL when notification is clicked
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        if let urlString = response.notification.request.content.userInfo["streamURL"] as? String,
+        if let urlString = response.notification.request.content.userInfo["clickURL"] as? String,
            let url = URL(string: urlString) {
             NSWorkspace.shared.open(url)
         }
@@ -41,7 +41,7 @@ final class NotificationManager: Sendable {
         }
     }
 
-    func send(title: String, body: String, identifier: String? = nil, playerID: Int? = nil, streamURL: URL? = nil) async {
+    func send(title: String, body: String, identifier: String? = nil, playerID: Int? = nil, clickURL: URL? = nil) async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         guard settings.authorizationStatus == .authorized else {
             print("[Notifications] Not authorized (status: \(settings.authorizationStatus.rawValue))")
@@ -52,8 +52,8 @@ final class NotificationManager: Sendable {
         content.title = title
         content.body = body
         content.sound = .default
-        if let streamURL {
-            content.userInfo["streamURL"] = streamURL.absoluteString
+        if let clickURL {
+            content.userInfo["clickURL"] = clickURL.absoluteString
         }
         if let playerID, let imageURL = await HeadshotCache.shared.fileURL(for: playerID) {
             if let attachment = try? UNNotificationAttachment(identifier: "headshot", url: imageURL) {
@@ -80,7 +80,7 @@ final class NotificationManager: Sendable {
             title: "\(playerName) is batting",
             body: "\(game), \(inning)",
             playerID: playerID,
-            streamURL: streamURL
+            clickURL: streamURL
         )
     }
 
@@ -90,7 +90,7 @@ final class NotificationManager: Sendable {
             title: "\(playerName) is taking the mound",
             body: "\(game), \(inning)",
             playerID: playerID,
-            streamURL: streamURL
+            clickURL: streamURL
         )
     }
 
@@ -100,7 +100,7 @@ final class NotificationManager: Sendable {
             title: "\(playerName)",
             body: description,
             playerID: playerID,
-            streamURL: streamURL
+            clickURL: streamURL
         )
     }
 
@@ -110,7 +110,17 @@ final class NotificationManager: Sendable {
             title: "\(playerName)",
             body: description,
             playerID: playerID,
-            streamURL: streamURL
+            clickURL: streamURL
+        )
+    }
+
+    func notifyNotInLineup(playerName: String, playerID: Int, game: String, fantraxURL: URL?) async {
+        guard UserDefaults.standard.bool(forKey: "notifyNotInLineup", default: true) else { return }
+        await send(
+            title: "\(playerName) is not in the lineup",
+            body: game,
+            playerID: playerID,
+            clickURL: fantraxURL
         )
     }
 }

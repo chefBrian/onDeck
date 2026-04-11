@@ -6,6 +6,7 @@ struct SettingsView: View {
     @State private var notifyPitching = UserDefaults.standard.bool(forKey: "notifyPitching", default: true)
     @State private var notifyAtBatResult = UserDefaults.standard.bool(forKey: "notifyAtBatResult", default: true)
     @State private var notifyPitchingResult = UserDefaults.standard.bool(forKey: "notifyPitchingResult", default: true)
+    @State private var notifyNotInLineup = UserDefaults.standard.bool(forKey: "notifyNotInLineup", default: true)
 
     var body: some View {
         Form {
@@ -98,6 +99,10 @@ struct SettingsView: View {
                 Toggle("Pitching results", isOn: $notifyPitchingResult)
                     .onChange(of: notifyPitchingResult) { _, new in
                         UserDefaults.standard.set(new, forKey: "notifyPitchingResult")
+                    }
+                Toggle("Not in lineup", isOn: $notifyNotInLineup)
+                    .onChange(of: notifyNotInLineup) { _, new in
+                        UserDefaults.standard.set(new, forKey: "notifyNotInLineup")
                     }
             }
             Section("Links") {

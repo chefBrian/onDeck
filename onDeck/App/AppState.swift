@@ -81,11 +81,13 @@ final class AppState {
     private var preGameRefreshTask: Task<Void, Never>?
     private var hasStarted = false
     private var notifiedPitcherIDs: Set<Int> = []
+    private var notifiedNotInLineup: Set<Int> = []
     private var lastResumeTime: Date = .distantPast
 
     init() {
         gameMonitor.configure(stateManager: stateManager)
         setupStateChangeHandler()
+        setupLineupUpdateHandler()
         setupSystemResumeHandler()
         Task {
             await start()
@@ -169,6 +171,7 @@ final class AppState {
 
         stateManager.reset()
         notifiedPitcherIDs.removeAll()
+        notifiedNotInLineup.removeAll()
         initializePlayerStates()
 
         gameMonitor.stopMonitoring()
@@ -179,6 +182,7 @@ final class AppState {
                 let lineupIDs = Set(game.homeLineup + game.awayLineup)
                 if !lineupIDs.isEmpty {
                     gameMonitor.lineupPlayerIDs[game.id] = lineupIDs
+                    await reconcileLineupNotifications(gamePk: game.id)
                 }
             }
             schedulePreGameRefresh()
@@ -198,6 +202,50 @@ final class AppState {
                     oldState: oldState,
                     newState: newState
                 )
+            }
+        }
+    }
+
+    /// Fires a one-shot "not in lineup" notification for active-roster hitters
+    /// whose team is playing in the given game but who are not in the posted lineup.
+    private func reconcileLineupNotifications(gamePk: Int) async {
+        guard let game = games.first(where: { $0.id == gamePk }),
+              let lineup = gameMonitor.lineupPlayerIDs[gamePk],
+              !lineup.isEmpty else { return }
+
+        for player in rosterManager.players {
+            guard player.isHitter,
+                  player.rosterStatus == .active,
+                  !notifiedNotInLineup.contains(player.id),
+                  isPlayerInGame(player: player, game: game),
+                  !lineup.contains(player.id) else { continue }
+
+            notifiedNotInLineup.insert(player.id)
+
+            let matchup = "\(game.awayTeam) @ \(game.homeTeam)"
+            let fantraxURL = rosterURL.isEmpty ? nil : URL(string: rosterURL)
+
+            print("[Notification] NOT IN LINEUP: \(player.name) - \(matchup)")
+            await notificationManager.notifyNotInLineup(
+                playerName: player.name,
+                playerID: player.id,
+                game: matchup,
+                fantraxURL: fantraxURL
+            )
+        }
+    }
+
+    /// Returns true if the player's team matches either side of the game
+    /// (bidirectional substring match to handle team-name variants).
+    private func isPlayerInGame(player: Player, game: Game) -> Bool {
+        return game.homeTeam.contains(player.team) || game.awayTeam.contains(player.team)
+            || player.team.contains(game.homeTeam) || player.team.contains(game.awayTeam)
+    }
+
+    private func setupLineupUpdateHandler() {
+        gameMonitor.onLineupUpdate = { [weak self] gamePk in
+            Task { @MainActor in
+                await self?.reconcileLineupNotifications(gamePk: gamePk)
             }
         }
     }
