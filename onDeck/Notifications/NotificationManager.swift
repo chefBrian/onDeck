@@ -9,7 +9,7 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate, Se
         completionHandler([.banner, .sound])
     }
 
-    // Open click-through URL when notification is clicked
+    // Open click-through URL when notification is clicked, and remove from Notification Center
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
@@ -17,6 +17,7 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate, Se
            let url = URL(string: urlString) {
             NSWorkspace.shared.open(url)
         }
+        center.removeDeliveredNotifications(withIdentifiers: [response.notification.request.identifier])
         completionHandler()
     }
 }
