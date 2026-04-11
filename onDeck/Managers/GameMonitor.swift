@@ -304,11 +304,13 @@ final class GameMonitor {
             }
         }
 
-        // Check if previous batter from our roster is no longer active
+        // Check if previous batter from our roster is no longer active.
+        // Only revert if they were actually a hitter - pitcher-only roster players
+        // (e.g. Ohtani-P) can appear as the feed's current batter without being tracked.
         if let prevBatter = lastBatterID[gamePk],
            prevBatter != feed.currentBatterID,
-           rosterPlayerIDs.contains(prevBatter) {
-            // Previous batter's at-bat is done - move back to upcoming
+           let prevPlayer = rosterPlayers[prevBatter],
+           prevPlayer.isHitter {
             stateManager?.update(playerID: prevBatter, state: .upcoming(startTime: game.startTime))
         }
 
