@@ -214,6 +214,16 @@ final class AppState {
               let lineup = gameMonitor.lineupPlayerIDs[gamePk],
               !lineup.isEmpty else { return }
 
+        // Don't notify once the game has started - too late to act on a bench swap.
+        // Prefer live feed state when available, otherwise fall back to scheduled start.
+        if let feedState = gameMonitor.latestFeeds[gamePk]?.gameState,
+           feedState == "Live" || feedState == "Final" {
+            return
+        }
+        if gameMonitor.latestFeeds[gamePk] == nil, game.startTime <= Date.now {
+            return
+        }
+
         for player in rosterManager.players {
             guard player.isHitter,
                   player.rosterStatus == .active,
@@ -343,9 +353,15 @@ final class AppState {
 
     // MARK: - Notifications
 
+    private func isStillActive(playerID: Int, role: PlayerState.ActiveRole) -> Bool {
+        guard case .active(let ctx) = stateManager.playerStates[playerID] else { return false }
+        return ctx.role == role
+    }
+
     private func handleStateTransition(playerID: Int, oldState: PlayerState?, newState: PlayerState) async {
         guard let player = rosterManager.players.first(where: { $0.id == playerID }) else { return }
         if hideBenchPlayers && player.isOnBench { return }
+        print("[Notification Transition] \(player.name) (\(playerID)): \(String(describing: oldState)) -> \(String(describing: newState))")
 
         switch (oldState, newState) {
         case (_, .active(let context)):
@@ -368,6 +384,11 @@ final class AppState {
                         inning: context.inning,
                         streamURL: streamURL
                     )
+                    // Race guard: state may have changed during the async send
+                    if !isStillActive(playerID: playerID, role: .pitching) {
+                        print("[Notification] RACE GUARD purge pitching: \(player.name) (state changed during send)")
+                        notificationManager.purgePitching(gamePk: context.gamePk, playerID: playerID)
+                    }
                 case .batting:
                     print("[Notification] BATTING: \(player.name) - \(gameString), \(context.inning)")
                     await notificationManager.notifyBatting(
@@ -378,6 +399,11 @@ final class AppState {
                         inning: context.inning,
                         streamURL: streamURL
                     )
+                    // Race guard: state may have changed during the async send
+                    if !isStillActive(playerID: playerID, role: .batting) {
+                        print("[Notification] RACE GUARD purge batting: \(player.name) (state changed during send)")
+                        notificationManager.purgeBatting(gamePk: context.gamePk, playerID: playerID)
+                    }
                 }
             }
 

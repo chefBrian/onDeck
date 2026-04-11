@@ -13,13 +13,14 @@ A macOS menu bar app that monitors live MLB games and sends notifications when y
 ## Features
 
 - **Live game tracking** - Monitors active MLB games via incremental diffPatch updates (every 10s), falling back to full fetches only during game phase transitions
-- **At-bat notifications** - Get alerted when your player steps up to bat or takes the mound
+- **At-bat notifications** - Get alerted when your player steps up to bat or takes the mound; notifications auto-dismiss when the at-bat ends or on click
 - **Result notifications** - See at-bat and pitching results as they happen
 - **Menu bar scoreboard** - Live scores, count, bases, outs, and inning for each player's game
 - **Stat lines** - Batting and pitching lines update in real time
 - **Floating panel** - Pin the player list as an always-on-top window
 - **Stream links** - Click a player row to jump straight to the game stream
-- **Lineup status** - Shows batting order position or not-in-lineup indicator, with pre-game checks at 2h/1h/30m before first pitch
+- **Lineup status** - Shows batting order position and notifies you pre-game if an active fantasy hitter isn't in the MLB lineup, with checks at 2h/1h/30m before first pitch
+- **Wake recovery** - Refreshes live data after system sleep or screen unlock so you don't miss anything
 - **Bench filtering** - Option to hide bench players from the roster
 - **Daily auto-refresh** - Roster and schedule re-sync every morning
 
