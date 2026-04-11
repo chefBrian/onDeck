@@ -32,17 +32,15 @@ final class AppState {
         set { UserDefaults.standard.set(newValue, forKey: "selectedTeamID") }
     }
 
-    var hideBenchPlayers: Bool {
-        get { UserDefaults.standard.bool(forKey: "hideBenchPlayers") }
-        set {
-            UserDefaults.standard.set(newValue, forKey: "hideBenchPlayers")
+    var hideBenchPlayers: Bool = UserDefaults.standard.bool(forKey: "hideBenchPlayers") {
+        didSet {
+            UserDefaults.standard.set(hideBenchPlayers, forKey: "hideBenchPlayers")
             updatePlayerLists()
         }
     }
 
-    var alwaysOpenPopout: Bool {
-        get { UserDefaults.standard.bool(forKey: "alwaysOpenPopout") }
-        set { UserDefaults.standard.set(newValue, forKey: "alwaysOpenPopout") }
+    var alwaysOpenPopout: Bool = UserDefaults.standard.bool(forKey: "alwaysOpenPopout") {
+        didSet { UserDefaults.standard.set(alwaysOpenPopout, forKey: "alwaysOpenPopout") }
     }
 
     // Team picker state

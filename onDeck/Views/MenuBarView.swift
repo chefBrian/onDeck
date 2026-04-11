@@ -722,7 +722,8 @@ struct FooterButtons: View {
         HStack(spacing: 0) {
             footerButton(systemIcon: "gear", label: "Settings") {
                 dismissMenu()
-                NSApplication.shared.activate()
+                NSApp.setActivationPolicy(.regular)
+                NSApp.activate()
                 openSettings()
             }
             if let leagueID = appState.parsedLeagueID {
