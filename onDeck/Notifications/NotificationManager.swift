@@ -41,7 +41,7 @@ final class NotificationManager: Sendable {
         }
     }
 
-    func send(title: String, body: String, identifier: String? = nil, playerID: Int? = nil, clickURL: URL? = nil) async {
+    func send(title: String, body: String, identifier: String? = nil, playerID: Int? = nil, clickURL: URL? = nil, autoDismissAfter: TimeInterval? = nil) async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         guard settings.authorizationStatus == .authorized else {
             print("[Notifications] Not authorized (status: \(settings.authorizationStatus.rawValue))")
@@ -67,9 +67,25 @@ final class NotificationManager: Sendable {
         do {
             try await UNUserNotificationCenter.current().add(request)
             print("[Notifications] Sent: \(title) - \(body)")
+            if let autoDismissAfter {
+                Task.detached {
+                    try? await Task.sleep(for: .seconds(autoDismissAfter))
+                    UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
+                }
+            }
         } catch {
             print("[Notifications] Failed to send: \(error)")
         }
+    }
+
+    /// Removes all delivered "not in lineup" notifications for the given game.
+    func purgeNotInLineupNotifications(gamePk: Int) async {
+        let prefix = "notInLineup-\(gamePk)-"
+        let delivered = await UNUserNotificationCenter.current().deliveredNotifications()
+        let ids = delivered.map(\.request.identifier).filter { $0.hasPrefix(prefix) }
+        guard !ids.isEmpty else { return }
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ids)
+        print("[Notifications] Purged \(ids.count) not-in-lineup notifications for game \(gamePk)")
     }
 
     // MARK: - Typed Notifications
@@ -80,7 +96,8 @@ final class NotificationManager: Sendable {
             title: "\(playerName) is batting",
             body: "\(game), \(inning)",
             playerID: playerID,
-            clickURL: streamURL
+            clickURL: streamURL,
+            autoDismissAfter: 30
         )
     }
 
@@ -90,7 +107,8 @@ final class NotificationManager: Sendable {
             title: "\(playerName) is taking the mound",
             body: "\(game), \(inning)",
             playerID: playerID,
-            clickURL: streamURL
+            clickURL: streamURL,
+            autoDismissAfter: 30
         )
     }
 
@@ -100,7 +118,8 @@ final class NotificationManager: Sendable {
             title: "\(playerName)",
             body: description,
             playerID: playerID,
-            clickURL: streamURL
+            clickURL: streamURL,
+            autoDismissAfter: 30
         )
     }
 
@@ -110,15 +129,17 @@ final class NotificationManager: Sendable {
             title: "\(playerName)",
             body: description,
             playerID: playerID,
-            clickURL: streamURL
+            clickURL: streamURL,
+            autoDismissAfter: 30
         )
     }
 
-    func notifyNotInLineup(playerName: String, playerID: Int, game: String, fantraxURL: URL?) async {
+    func notifyNotInLineup(playerName: String, playerID: Int, gamePk: Int, game: String, fantraxURL: URL?) async {
         guard UserDefaults.standard.bool(forKey: "notifyNotInLineup", default: true) else { return }
         await send(
             title: "\(playerName) is not in the lineup",
             body: game,
+            identifier: "notInLineup-\(gamePk)-\(playerID)",
             playerID: playerID,
             clickURL: fantraxURL
         )

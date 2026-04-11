@@ -88,6 +88,7 @@ final class AppState {
         gameMonitor.configure(stateManager: stateManager)
         setupStateChangeHandler()
         setupLineupUpdateHandler()
+        setupGameStartHandler()
         setupSystemResumeHandler()
         Task {
             await start()
@@ -229,6 +230,7 @@ final class AppState {
             await notificationManager.notifyNotInLineup(
                 playerName: player.name,
                 playerID: player.id,
+                gamePk: gamePk,
                 game: matchup,
                 fantraxURL: fantraxURL
             )
@@ -246,6 +248,14 @@ final class AppState {
         gameMonitor.onLineupUpdate = { [weak self] gamePk in
             Task { @MainActor in
                 await self?.reconcileLineupNotifications(gamePk: gamePk)
+            }
+        }
+    }
+
+    private func setupGameStartHandler() {
+        gameMonitor.onGameStart = { [weak self] gamePk in
+            Task { @MainActor in
+                await self?.notificationManager.purgeNotInLineupNotifications(gamePk: gamePk)
             }
         }
     }

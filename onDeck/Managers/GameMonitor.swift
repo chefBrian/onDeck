@@ -37,8 +37,14 @@ final class GameMonitor {
     /// Lineup player IDs per game (batting order + pitchers).
     var lineupPlayerIDs: [Int: Set<Int>] = [:] // gamePk -> set of player IDs in lineup
 
+    /// Games that have been observed in Live/In Progress at least once (for one-shot start detection).
+    private var liveGamesSeen: Set<Int> = []
+
     /// Callback fired when `lineupPlayerIDs[gamePk]` is populated or changes.
     var onLineupUpdate: ((Int) -> Void)?
+
+    /// Callback fired once per game the first time it transitions to Live/In Progress.
+    var onGameStart: ((Int) -> Void)?
 
     func configure(stateManager: StateManager) {
         self.stateManager = stateManager
@@ -76,6 +82,7 @@ final class GameMonitor {
         lastHomePitcherID.removeAll()
         lastAwayPitcherID.removeAll()
         lineupPlayerIDs.removeAll()
+        liveGamesSeen.removeAll()
         cachedFeedData.removeAll()
         cachedTimecodes.removeAll()
         completedMilestones.removeAll()
@@ -242,6 +249,10 @@ final class GameMonitor {
         guard feed.gameState == "Live", feed.detailedState == "In Progress" else {
             print("[GameMonitor] Game \(gamePk) state: \(feed.gameState)/\(feed.detailedState ?? "nil") (skipping)")
             return
+        }
+
+        if liveGamesSeen.insert(gamePk).inserted {
+            onGameStart?(gamePk)
         }
 
         let awayShort = game.awayTeam.split(separator: " ").last.map(String.init) ?? game.awayTeam
