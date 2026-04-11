@@ -359,7 +359,7 @@ final class AppState {
     private func handleStateTransition(playerID: Int, oldState: PlayerState?, newState: PlayerState) async {
         guard let player = rosterManager.players.first(where: { $0.id == playerID }) else { return }
         if hideBenchPlayers && player.isOnBench { return }
-        print("[Notification Transition] \(player.name) (\(playerID)): \(String(describing: oldState)) -> \(String(describing: newState))")
+        print("[Transition] \(player.name) (\(playerID)): \(String(describing: oldState)) -> \(String(describing: newState))")
 
         switch (oldState, newState) {
         case (_, .active(let context)):
