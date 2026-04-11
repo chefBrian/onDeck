@@ -4,7 +4,6 @@ import AppKit
 final class HeadshotCache {
     static let shared = HeadshotCache()
 
-    private var memory: [Int: NSImage] = [:]
     private let cacheDir: URL = {
         let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Headshots", isDirectory: true)
@@ -35,10 +34,9 @@ final class HeadshotCache {
         guard let url = URL(string: "https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_128/q_auto:best/v1/people/\(playerID)/headshot/67/current") else { return }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
-            guard let image = NSImage(data: data) else { return }
+            guard NSImage(data: data) != nil else { return }
             let file = cacheDir.appendingPathComponent("\(playerID).png")
             try? data.write(to: file)
-            await MainActor.run { memory[playerID] = image }
         } catch {
             // Silently skip - notification will just have no image
         }

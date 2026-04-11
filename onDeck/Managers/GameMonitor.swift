@@ -101,6 +101,16 @@ final class GameMonitor {
     /// Stops monitoring a specific game (e.g., when no roster players remain).
     func stopMonitoring(gamePk: Int) {
         monitoredGames.removeValue(forKey: gamePk)
+        cachedFeedData.removeValue(forKey: gamePk)
+        cachedTimecodes.removeValue(forKey: gamePk)
+        lineupPlayerIDs.removeValue(forKey: gamePk)
+        lastBatterID.removeValue(forKey: gamePk)
+        lastPitcherID.removeValue(forKey: gamePk)
+        lastHomePitcherID.removeValue(forKey: gamePk)
+        lastAwayPitcherID.removeValue(forKey: gamePk)
+        completedMilestones.removeValue(forKey: gamePk)
+        liveGamesSeen.remove(gamePk)
+        // Keep latestFeeds[gamePk] - AppState's Done section reads feed.playerStats for finished games.
         if monitoredGames.isEmpty {
             coordinatorTask?.cancel()
             coordinatorTask = nil
