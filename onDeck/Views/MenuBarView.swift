@@ -36,7 +36,10 @@ private func battingProximity(for player: Player, in appState: AppState) -> Batt
     let battingOrder = isHome ? feed.homeBattingOrder : feed.awayBattingOrder
     guard let playerIndex = battingOrder.firstIndex(of: player.id) else { return nil }
 
-    let teamIsBatting = (isHome && feed.inningHalf == "Bottom") || (!isHome && feed.inningHalf == "Top")
+    // Between half-innings MLB keeps currentBatter/inningHalf as stale holdover from the
+    // previous play, so the 3rd-out hitter would still look "at bat" until play resumes.
+    let isBreak = feed.inningState == "Middle" || feed.inningState == "End"
+    let teamIsBatting = !isBreak && ((isHome && feed.inningHalf == "Bottom") || (!isHome && feed.inningHalf == "Top"))
 
     guard teamIsBatting, let currentBatterID = feed.currentBatterID,
           let currentIndex = battingOrder.firstIndex(of: currentBatterID) else {
