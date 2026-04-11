@@ -78,7 +78,6 @@ final class AppState {
     private var midnightTask: Task<Void, Never>?
     private var preGameRefreshTask: Task<Void, Never>?
     private var hasStarted = false
-    private var notifiedPitcherIDs: Set<Int> = []
     private var notifiedNotInLineup: Set<Int> = []
     private var lastResumeTime: Date = .distantPast
 
@@ -169,7 +168,6 @@ final class AppState {
         games = scheduleManager.todaysGames
 
         stateManager.reset()
-        notifiedPitcherIDs.removeAll()
         notifiedNotInLineup.removeAll()
         initializePlayerStates()
 
@@ -371,8 +369,6 @@ final class AppState {
                 let streamURL = streamURL(for: context.gamePk)
                 switch context.role {
                 case .pitching:
-                    guard !notifiedPitcherIDs.contains(playerID) else { break }
-                    notifiedPitcherIDs.insert(playerID)
                     print("[Notification] PITCHING: \(player.name) - \(gameString), \(context.inning)")
                     await notificationManager.notifyPitching(
                         playerName: player.name,
@@ -430,6 +426,14 @@ final class AppState {
                     description: "\(player.name) has been pulled from the game",
                     streamURL: streamURL(for: context.gamePk)
                 )
+            }
+
+        case (.active(let context), .inactive(.gameOver(_))):
+            switch context.role {
+            case .batting:
+                notificationManager.purgeBatting(gamePk: context.gamePk, playerID: playerID)
+            case .pitching:
+                notificationManager.purgePitching(gamePk: context.gamePk, playerID: playerID)
             }
 
         default:

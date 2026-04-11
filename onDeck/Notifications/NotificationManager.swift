@@ -91,13 +91,17 @@ final class NotificationManager: Sendable {
 
     func purgeBatting(gamePk: Int, playerID: Int) {
         let id = "batting-\(gamePk)-\(playerID)"
-        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [id])
+        center.removeDeliveredNotifications(withIdentifiers: [id])
         print("[Notifications] Purge: \(id)")
     }
 
     func purgePitching(gamePk: Int, playerID: Int) {
         let id = "pitching-\(gamePk)-\(playerID)"
-        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [id])
+        center.removeDeliveredNotifications(withIdentifiers: [id])
         print("[Notifications] Purge: \(id)")
     }
 
