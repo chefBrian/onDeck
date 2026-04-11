@@ -157,6 +157,7 @@ struct MLBStatsAPI: Sendable {
             currentPitcherName: currentPlay?.matchup.pitcher.fullName,
             inning: linescore?.currentInning,
             inningHalf: linescore?.inningHalf,
+            inningState: linescore?.inningState,
             homeScore: linescore?.teams?.home.runs ?? 0,
             awayScore: linescore?.teams?.away.runs ?? 0,
             homeTeam: response.gameData.teams.home.name,
@@ -275,6 +276,7 @@ struct LiveFeedData: Sendable {
     let currentPitcherName: String?
     let inning: Int?
     let inningHalf: String?
+    let inningState: String?
     let homeScore: Int
     let awayScore: Int
     let homeTeam: String
@@ -501,6 +503,7 @@ private struct FeedPlayCount: Codable {
 private struct FeedLinescore: Codable {
     let currentInning: Int?
     let inningHalf: String?
+    let inningState: String?
     let teams: FeedLinescoreTeams?
     let offense: FeedOffense?
 }

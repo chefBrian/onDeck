@@ -255,6 +255,10 @@ final class GameMonitor {
             onGameStart?(gamePk)
         }
 
+        // Between half-innings, currentBatter/currentPitcher are stale holdover from the
+        // last play of the previous half-inning - MLB doesn't clear them until play resumes.
+        let isBreak = feed.inningState == "Middle" || feed.inningState == "End"
+
         let awayShort = game.awayTeam.split(separator: " ").last.map(String.init) ?? game.awayTeam
         let homeShort = game.homeTeam.split(separator: " ").last.map(String.init) ?? game.homeTeam
 
@@ -280,27 +284,38 @@ final class GameMonitor {
             )
         }
 
-        // Check current batter - only track if rostered as hitter
-        if let batterID = feed.currentBatterID {
-            if let player = rosterPlayers[batterID], player.isHitter {
-                let isNew = lastBatterID[gamePk] != batterID
-                print("[GameMonitor] >>> ROSTER BATTER: \(feed.currentBatterName ?? "?") (ID \(batterID)) - \(isNew ? "NEW" : "same") - \(inning)")
-                stateManager?.update(playerID: batterID, state: .active(makeContext(role: .batting)))
-            } else if lastBatterID[gamePk] != batterID {
-                if rosterPlayerIDs.contains(batterID) {
-                    print("[GameMonitor] Batter \(feed.currentBatterName ?? "?") (ID \(batterID)) on roster as pitcher-only, skipping")
-                } else {
-                    print("[GameMonitor] Batter \(feed.currentBatterName ?? "?") (ID \(batterID)) not on roster")
+        if isBreak {
+            // Flip any roster player currently active in this game to upcoming.
+            // Leaves substituted players alone (they're .inactive, not .active).
+            for id in rosterPlayerIDs {
+                guard let state = stateManager?.playerStates[id],
+                      case .active(let ctx) = state,
+                      ctx.gamePk == gamePk else { continue }
+                stateManager?.update(playerID: id, state: .upcoming(startTime: game.startTime))
+            }
+        } else {
+            // Check current batter - only track if rostered as hitter
+            if let batterID = feed.currentBatterID {
+                if let player = rosterPlayers[batterID], player.isHitter {
+                    let isNew = lastBatterID[gamePk] != batterID
+                    print("[GameMonitor] >>> ROSTER BATTER: \(feed.currentBatterName ?? "?") (ID \(batterID)) - \(isNew ? "NEW" : "same") - \(inning)")
+                    stateManager?.update(playerID: batterID, state: .active(makeContext(role: .batting)))
+                } else if lastBatterID[gamePk] != batterID {
+                    if rosterPlayerIDs.contains(batterID) {
+                        print("[GameMonitor] Batter \(feed.currentBatterName ?? "?") (ID \(batterID)) on roster as pitcher-only, skipping")
+                    } else {
+                        print("[GameMonitor] Batter \(feed.currentBatterName ?? "?") (ID \(batterID)) not on roster")
+                    }
                 }
             }
-        }
 
-        // Check current pitcher - only track if rostered as pitcher
-        if let pitcherID = feed.currentPitcherID {
-            if let player = rosterPlayers[pitcherID], player.isPitcher {
-                let isNew = lastPitcherID[gamePk] != pitcherID
-                print("[GameMonitor] >>> ROSTER PITCHER: \(feed.currentPitcherName ?? "?") (ID \(pitcherID)) - \(isNew ? "NEW" : "same") - \(inning)")
-                stateManager?.update(playerID: pitcherID, state: .active(makeContext(role: .pitching)))
+            // Check current pitcher - only track if rostered as pitcher
+            if let pitcherID = feed.currentPitcherID {
+                if let player = rosterPlayers[pitcherID], player.isPitcher {
+                    let isNew = lastPitcherID[gamePk] != pitcherID
+                    print("[GameMonitor] >>> ROSTER PITCHER: \(feed.currentPitcherName ?? "?") (ID \(pitcherID)) - \(isNew ? "NEW" : "same") - \(inning)")
+                    stateManager?.update(playerID: pitcherID, state: .active(makeContext(role: .pitching)))
+                }
             }
         }
 
