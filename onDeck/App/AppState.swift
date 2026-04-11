@@ -178,9 +178,9 @@ final class AppState {
             gameMonitor.startMonitoring(games: games, players: rosterManager.players)
             // Seed lineup data from schedule (available before live feed polling starts)
             for game in games {
-                let lineupIDs = Set(game.homeLineup + game.awayLineup)
-                if !lineupIDs.isEmpty {
-                    gameMonitor.lineupPlayerIDs[game.id] = lineupIDs
+                let lineup = GameLineup(home: Set(game.homeLineup), away: Set(game.awayLineup))
+                if lineup.isSubmitted(for: .home) || lineup.isSubmitted(for: .away) {
+                    gameMonitor.lineupPlayerIDs[game.id] = lineup
                     await reconcileLineupNotifications(gamePk: game.id)
                 }
             }
@@ -209,8 +209,7 @@ final class AppState {
     /// whose team is playing in the given game but who are not in the posted lineup.
     private func reconcileLineupNotifications(gamePk: Int) async {
         guard let game = games.first(where: { $0.id == gamePk }),
-              let lineup = gameMonitor.lineupPlayerIDs[gamePk],
-              !lineup.isEmpty else { return }
+              let lineup = gameMonitor.lineupPlayerIDs[gamePk] else { return }
 
         // Don't notify once the game has started - too late to act on a bench swap.
         // Prefer live feed state when available, otherwise fall back to scheduled start.
@@ -226,8 +225,9 @@ final class AppState {
             guard player.isHitter,
                   player.rosterStatus == .active,
                   !notifiedNotInLineup.contains(player.id),
-                  isPlayerInGame(player: player, game: game),
-                  !lineup.contains(player.id) else { continue }
+                  let side = game.side(for: player),
+                  lineup.isSubmitted(for: side),
+                  !lineup.ids(for: side).contains(player.id) else { continue }
 
             notifiedNotInLineup.insert(player.id)
 

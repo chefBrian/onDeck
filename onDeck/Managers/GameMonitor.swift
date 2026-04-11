@@ -34,8 +34,9 @@ final class GameMonitor {
     /// Latest feed data per game (for In Game player display).
     var latestFeeds: [Int: LiveFeedData] = [:] // gamePk -> feed
 
-    /// Lineup player IDs per game (batting order + pitchers).
-    var lineupPlayerIDs: [Int: Set<Int>] = [:] // gamePk -> set of player IDs in lineup
+    /// Lineup player IDs per game, tracked per side so consumers can tell
+    /// whether a player's own team has submitted yet (vs just the opponent).
+    var lineupPlayerIDs: [Int: GameLineup] = [:] // gamePk -> per-side lineup IDs
 
     /// Games that have been observed in Live/In Progress at least once (for one-shot start detection).
     private var liveGamesSeen: Set<Int> = []
@@ -239,11 +240,21 @@ final class GameMonitor {
     private func processFeed(_ feed: LiveFeedData, gamePk: Int, game: Game) {
         latestFeeds[gamePk] = feed
 
-        // Track lineup (available before game goes Live)
-        let lineupIDs = Set(feed.homeBattingOrder + feed.awayBattingOrder + feed.homePitchers + feed.awayPitchers)
-        if !lineupIDs.isEmpty && lineupPlayerIDs[gamePk] != lineupIDs {
-            lineupPlayerIDs[gamePk] = lineupIDs
-            onLineupUpdate?(gamePk)
+        // Track lineup per side. Only overwrite a side when the feed actually
+        // has data for it - an empty side means that team hasn't filed its
+        // lineup card yet, not that we should drop what we already had.
+        let homeIDs = Set(feed.homeBattingOrder + feed.homePitchers)
+        let awayIDs = Set(feed.awayBattingOrder + feed.awayPitchers)
+        if !homeIDs.isEmpty || !awayIDs.isEmpty {
+            let existing = lineupPlayerIDs[gamePk] ?? GameLineup()
+            let updated = GameLineup(
+                home: homeIDs.isEmpty ? existing.home : homeIDs,
+                away: awayIDs.isEmpty ? existing.away : awayIDs
+            )
+            if updated != existing {
+                lineupPlayerIDs[gamePk] = updated
+                onLineupUpdate?(gamePk)
+            }
         }
 
         guard feed.gameState == "Live", feed.detailedState == "In Progress" else {
