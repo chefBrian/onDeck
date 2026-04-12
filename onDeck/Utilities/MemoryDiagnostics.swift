@@ -6,22 +6,36 @@ enum MemoryDiagnostics {
     struct Snapshot {
         let rssBytes: UInt64
         let virtualBytes: UInt64
+        let physFootprintBytes: UInt64   // matches Activity Monitor "Memory" column
+        let compressedBytes: UInt64      // bytes swapped into the compressor
         let mallocInUseBytes: UInt64
         let mallocAllocatedBytes: UInt64
     }
 
-    /// Reads the current process's resident/virtual bytes via Mach, plus
+    /// Reads the current process's memory footprint via Mach, plus
     /// default-zone malloc stats for attribution of heap growth.
     static func snapshot() -> Snapshot {
-        var info = mach_task_basic_info()
-        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<integer_t>.size)
-        let kr = withUnsafeMutablePointer(to: &info) { ptr in
-            ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+        // Basic info: resident_size + virtual_size
+        var basic = mach_task_basic_info()
+        var basicCount = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<integer_t>.size)
+        let basicKr = withUnsafeMutablePointer(to: &basic) { ptr in
+            ptr.withMemoryRebound(to: integer_t.self, capacity: Int(basicCount)) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &basicCount)
             }
         }
-        let rss: UInt64 = kr == KERN_SUCCESS ? UInt64(info.resident_size) : 0
-        let vsize: UInt64 = kr == KERN_SUCCESS ? UInt64(info.virtual_size) : 0
+        let rss: UInt64 = basicKr == KERN_SUCCESS ? UInt64(basic.resident_size) : 0
+        let vsize: UInt64 = basicKr == KERN_SUCCESS ? UInt64(basic.virtual_size) : 0
+
+        // VM info: phys_footprint (matches Activity Monitor) + compressed
+        var vmInfo = task_vm_info_data_t()
+        var vmCount = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let vmKr = withUnsafeMutablePointer(to: &vmInfo) { ptr in
+            ptr.withMemoryRebound(to: integer_t.self, capacity: Int(vmCount)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &vmCount)
+            }
+        }
+        let footprint: UInt64 = vmKr == KERN_SUCCESS ? UInt64(vmInfo.phys_footprint) : 0
+        let compressed: UInt64 = vmKr == KERN_SUCCESS ? UInt64(vmInfo.compressed) : 0
 
         var stats = malloc_statistics_t()
         malloc_zone_statistics(nil, &stats)
@@ -29,6 +43,8 @@ enum MemoryDiagnostics {
         return Snapshot(
             rssBytes: rss,
             virtualBytes: vsize,
+            physFootprintBytes: footprint,
+            compressedBytes: compressed,
             mallocInUseBytes: UInt64(stats.size_in_use),
             mallocAllocatedBytes: UInt64(stats.size_allocated)
         )
@@ -56,7 +72,9 @@ final class MemoryProbeLogger {
 
     private init() {
         let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        logURL = dir.appendingPathComponent("onDeck-memlog.csv")
+        // v2: added phys_footprint + compressed columns. v1 file (if present)
+        // is kept so prior baselines can still be read.
+        logURL = dir.appendingPathComponent("onDeck-memlog-v2.csv")
     }
 
     var isEnabled: Bool {
@@ -103,7 +121,7 @@ final class MemoryProbeLogger {
 
     private func writeHeaderIfNeeded() {
         guard !FileManager.default.fileExists(atPath: logURL.path) else { return }
-        let header = "timestamp,event,rss_mb,vsize_mb,malloc_inuse_mb,malloc_alloc_mb,active_games,monitored_games,latest_feeds,cached_feed_bytes,team_logos,notif_delivered,notif_pending,poll_count,popout_open,popout_total_s,f_noPopout,f_noNamespace,f_skipNotif,f_stubDecode,f_resetURLCache,url_cache_mem,url_cache_disk\n"
+        let header = "timestamp,event,footprint_mb,rss_mb,compressed_mb,vsize_mb,malloc_inuse_mb,malloc_alloc_mb,active_games,monitored_games,latest_feeds,cached_feed_bytes,team_logos,notif_delivered,notif_pending,poll_count,popout_open,popout_total_s,f_noPopout,f_noNamespace,f_skipNotif,f_stubDecode,f_resetURLCache,url_cache_mem,url_cache_disk\n"
         FileManager.default.createFile(atPath: logURL.path, contents: header.data(using: .utf8))
     }
 
@@ -133,7 +151,9 @@ final class MemoryProbeLogger {
         let fields: [String] = [
             Self.isoFormatter.string(from: Date()),
             event,
+            mb(snap.physFootprintBytes),
             mb(snap.rssBytes),
+            mb(snap.compressedBytes),
             mb(snap.virtualBytes),
             mb(snap.mallocInUseBytes),
             mb(snap.mallocAllocatedBytes),
