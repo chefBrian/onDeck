@@ -1,7 +1,9 @@
 import AppKit
 import UserNotifications
 
-final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate, Sendable {
+// Stateless delegate - no mutable properties, so @unchecked is safe.
+// NSObject doesn't conform to Sendable on its own in Swift 6.
+final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate, @unchecked Sendable {
     // Show notifications even when app is in the foreground
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification,
@@ -22,9 +24,30 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate, Se
     }
 }
 
+/// Tracks pending auto-dismiss tasks so they can be coalesced and cancelled,
+/// instead of leaking fire-and-forget `Task.detached` sleeps.
+private actor DismissalBag {
+    private var tasks: [String: Task<Void, Never>] = [:]
+
+    func schedule(id: String, delay: TimeInterval) {
+        tasks[id]?.cancel()
+        tasks[id] = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
+            await self?.clear(id: id)
+        }
+    }
+
+    private func clear(id: String) {
+        tasks.removeValue(forKey: id)
+    }
+}
+
 final class NotificationManager: Sendable {
     static let shared = NotificationManager()
     private let delegate = NotificationDelegate()
+    private let dismissalBag = DismissalBag()
 
     init() {
         UNUserNotificationCenter.current().delegate = delegate
@@ -56,7 +79,7 @@ final class NotificationManager: Sendable {
         if let clickURL {
             content.userInfo["clickURL"] = clickURL.absoluteString
         }
-        if let playerID, let imageURL = await HeadshotCache.shared.fileURL(for: playerID) {
+        if let playerID, let imageURL = HeadshotCache.shared.fileURL(for: playerID) {
             if let attachment = try? UNNotificationAttachment(identifier: "headshot", url: imageURL) {
                 content.attachments = [attachment]
             }
@@ -69,10 +92,7 @@ final class NotificationManager: Sendable {
             try await UNUserNotificationCenter.current().add(request)
             print("[Notifications] Sent: \(title) - \(body)")
             if let autoDismissAfter {
-                Task.detached {
-                    try? await Task.sleep(for: .seconds(autoDismissAfter))
-                    UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
-                }
+                await dismissalBag.schedule(id: id, delay: autoDismissAfter)
             }
         } catch {
             print("[Notifications] Failed to send: \(error)")

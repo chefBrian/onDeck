@@ -27,12 +27,14 @@ final class RosterManager {
                 teamID: teamID
             )
 
-            // Resolve all MLB IDs in parallel
+            // Resolve all MLB IDs in parallel.
+            // Capture the API as a value so child tasks don't retain `self`.
+            let api = mlbAPI
             let resolved = await withTaskGroup(of: (FantraxAPI.FantraxPlayer, Int)?.self) { group in
                 for fp in fantraxPlayers {
                     group.addTask {
                         let cleanedName = NameCleaner.clean(fp.name)
-                        guard let mlbID = try? await self.mlbAPI.searchPlayer(
+                        guard let mlbID = try? await api.searchPlayer(
                             name: cleanedName,
                             teamName: fp.teamShortName
                         ) else { return nil }

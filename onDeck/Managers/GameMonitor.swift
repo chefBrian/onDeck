@@ -87,6 +87,11 @@ final class GameMonitor {
         cachedFeedData.removeAll()
         cachedTimecodes.removeAll()
         completedMilestones.removeAll()
+        // Full stop (e.g. midnight refresh) drops per-game feed caches too.
+        // The per-game stopMonitoring(gamePk:) intentionally retains latestFeeds
+        // so the Done section can keep reading stats for finished games.
+        latestFeeds.removeAll()
+        lastPlayDescriptions.removeAll()
         isMonitoring = false
     }
 

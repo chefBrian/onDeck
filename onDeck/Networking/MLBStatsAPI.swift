@@ -46,12 +46,7 @@ struct MLBStatsAPI: Sendable {
                     return Game.Broadcast(callSign: callSign, isExclusive: isExclusive)
                 }
 
-                let startTime: Date
-                if let gameDate = ISO8601DateFormatter().date(from: game.gameDate) {
-                    startTime = gameDate
-                } else {
-                    startTime = .now
-                }
+                let startTime = Self.iso8601Formatter.date(from: game.gameDate) ?? .now
 
                 return Game(
                     id: game.gamePk,
@@ -185,7 +180,7 @@ struct MLBStatsAPI: Sendable {
 
     /// Returns the set of gamePks that have been updated since `since`.
     func fetchGameChanges(since: Date) async throws -> Set<Int> {
-        let timestamp = ISO8601DateFormatter().string(from: since)
+        let timestamp = Self.iso8601Formatter.string(from: since)
         let encoded = timestamp.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? timestamp
         let url = URL(string: "https://statsapi.mlb.com/api/v1/game/changes?updatedSince=\(encoded)&sportId=1")!
         let (data, _) = try await URLSession.shared.data(from: url)
@@ -251,6 +246,8 @@ struct MLBStatsAPI: Sendable {
         f.dateFormat = "yyyy-MM-dd"
         return f
     }()
+
+    private static let iso8601Formatter = ISO8601DateFormatter()
 
     private static func formatBytes(_ count: Int) -> String {
         if count < 1024 { return "\(count)B" }

@@ -90,8 +90,13 @@ private struct ActiveSection: View {
         if !appState.activePlayers.isEmpty {
             SectionHeader(title: "Active Now", showClose: true, isFloating: isFloating, appState: appState)
             ForEach(appState.activePlayers) { player in
-                LivePlayerRow(player: player, appState: appState, isFloating: isFloating)
-                    .matchedGeometryEffect(id: player.id, in: namespace)
+                LivePlayerRow(
+                    player: player,
+                    proximity: battingProximity(for: player, in: appState),
+                    appState: appState,
+                    isFloating: isFloating
+                )
+                .matchedGeometryEffect(id: player.id, in: namespace)
             }
             SectionDivider()
         }
@@ -105,21 +110,26 @@ private struct InGameSection: View {
 
     var body: some View {
         if !appState.inGamePlayers.isEmpty {
+            // Compute proximity once per player; reuse for sort, animation, and row rendering.
+            let entries = appState.inGamePlayers
+                .map { (player: $0, proximity: battingProximity(for: $0, in: appState)) }
+                .sorted { ($0.proximity?.sortKey ?? 4) < ($1.proximity?.sortKey ?? 4) }
             SectionHeader(
                 title: "In Game",
                 showClose: appState.activePlayers.isEmpty,
                 isFloating: isFloating,
                 appState: appState
             )
-            ForEach(appState.inGamePlayers.sorted { a, b in
-                let pa = battingProximity(for: a, in: appState)?.sortKey ?? 4
-                let pb = battingProximity(for: b, in: appState)?.sortKey ?? 4
-                return pa < pb
-            }) { player in
-                LivePlayerRow(player: player, appState: appState, isFloating: isFloating)
-                    .matchedGeometryEffect(id: player.id, in: namespace)
+            ForEach(entries, id: \.player.id) { entry in
+                LivePlayerRow(
+                    player: entry.player,
+                    proximity: entry.proximity,
+                    appState: appState,
+                    isFloating: isFloating
+                )
+                .matchedGeometryEffect(id: entry.player.id, in: namespace)
             }
-            .animation(.easeInOut(duration: 0.3), value: appState.inGamePlayers.map { battingProximity(for: $0, in: appState)?.sortKey ?? 4 })
+            .animation(.easeInOut(duration: 0.3), value: entries.map { $0.proximity?.sortKey ?? 4 })
             SectionDivider()
         }
     }
@@ -272,6 +282,7 @@ private struct SectionDivider: View {
 
 private struct LivePlayerRow: View {
     let player: Player
+    let proximity: BattingProximity?
     let appState: AppState
     let isFloating: Bool
 
@@ -290,10 +301,6 @@ private struct LivePlayerRow: View {
     private var feed: LiveFeedData? {
         guard let game else { return nil }
         return appState.gameMonitor.latestFeeds[game.id]
-    }
-
-    private var proximity: BattingProximity? {
-        battingProximity(for: player, in: appState)
     }
 
     private var isInLineup: Bool {

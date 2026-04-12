@@ -1,7 +1,6 @@
 import AppKit
 
-@MainActor
-final class HeadshotCache {
+final class HeadshotCache: Sendable {
     static let shared = HeadshotCache()
 
     private let cacheDir: URL = {

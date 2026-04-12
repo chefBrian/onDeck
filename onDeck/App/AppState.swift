@@ -22,14 +22,14 @@ final class AppState {
     var isSyncing = false
 
     // Settings
-    var rosterURL: String {
-        get { UserDefaults.standard.string(forKey: "rosterURL") ?? "" }
-        set { UserDefaults.standard.set(newValue, forKey: "rosterURL") }
+    // Stored (not computed) so @Observable tracks reads and @Bindable
+    // in SettingsView can form a two-way binding.
+    var rosterURL: String = UserDefaults.standard.string(forKey: "rosterURL") ?? "" {
+        didSet { UserDefaults.standard.set(rosterURL, forKey: "rosterURL") }
     }
 
-    var selectedTeamID: String {
-        get { UserDefaults.standard.string(forKey: "selectedTeamID") ?? "" }
-        set { UserDefaults.standard.set(newValue, forKey: "selectedTeamID") }
+    var selectedTeamID: String = UserDefaults.standard.string(forKey: "selectedTeamID") ?? "" {
+        didSet { UserDefaults.standard.set(selectedTeamID, forKey: "selectedTeamID") }
     }
 
     var hideBenchPlayers: Bool = UserDefaults.standard.bool(forKey: "hideBenchPlayers") {
@@ -80,6 +80,7 @@ final class AppState {
     private var hasStarted = false
     private var notifiedNotInLineup: Set<Int> = []
     private var lastResumeTime: Date = .distantPast
+    private var playerListsDirty = false
 
     init() {
         gameMonitor.configure(stateManager: stateManager)
@@ -191,7 +192,7 @@ final class AppState {
     private func setupStateChangeHandler() {
         stateManager.onStateChange = { [weak self] playerID, oldState, newState in
             guard let self else { return }
-            self.updatePlayerLists()
+            self.schedulePlayerListRebuild()
 
             Task { @MainActor in
                 await self.handleStateTransition(
@@ -200,6 +201,20 @@ final class AppState {
                     newState: newState
                 )
             }
+        }
+    }
+
+    /// Coalesces list rebuilds. A single poll cycle can fire 10+ state updates
+    /// (pitcher substitution loop, batter+pitcher transitions); doing a full
+    /// roster scan for each is wasteful. Defer to the next run-loop tick so
+    /// all updates in one synchronous pass collapse into one rebuild.
+    private func schedulePlayerListRebuild() {
+        guard !playerListsDirty else { return }
+        playerListsDirty = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.playerListsDirty = false
+            self.updatePlayerLists()
         }
     }
 
