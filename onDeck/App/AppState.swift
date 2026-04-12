@@ -164,6 +164,8 @@ final class AppState {
     }
 
     private func fetchScheduleAndStartMonitoring() async {
+        await NotificationManager.shared.purgeAll()
+
         let teamNames = Set(rosterManager.players.map(\.team))
         await scheduleManager.fetchSchedule(for: teamNames)
         games = scheduleManager.todaysGames

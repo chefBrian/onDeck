@@ -39,6 +39,11 @@ private actor DismissalBag {
         }
     }
 
+    func cancelAll() {
+        for task in tasks.values { task.cancel() }
+        tasks.removeAll()
+    }
+
     private func clear(id: String) {
         tasks.removeValue(forKey: id)
     }
@@ -107,6 +112,15 @@ final class NotificationManager: Sendable {
         guard !ids.isEmpty else { return }
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ids)
         print("[Notifications] Purged \(ids.count) not-in-lineup notifications for game \(gamePk)")
+    }
+
+    /// Removes all delivered and pending notifications and cancels auto-dismiss timers.
+    func purgeAll() async {
+        let center = UNUserNotificationCenter.current()
+        center.removeAllDeliveredNotifications()
+        center.removeAllPendingNotificationRequests()
+        await dismissalBag.cancelAll()
+        print("[Notifications] Purged all notifications (day rollover)")
     }
 
     func purgeBatting(gamePk: Int, playerID: Int) {
