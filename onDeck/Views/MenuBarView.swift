@@ -58,6 +58,21 @@ private func battingProximity(for player: Player, in appState: AppState) -> Batt
     }
 }
 
+extension View {
+    /// Applies `matchedGeometryEffect` unless `memDiagNoNamespace` flag is set,
+    /// so a memory probe can isolate SwiftUI namespace retention.
+    /// NOTE: flipping the flag mid-session may leave SwiftUI in a weird state —
+    /// close and reopen the popout after changing it.
+    @ViewBuilder
+    func matchedGeometryConditional<ID: Hashable>(id: ID, in namespace: Namespace.ID) -> some View {
+        if MemDiagFlags.noNamespace {
+            self
+        } else {
+            self.matchedGeometryEffect(id: id, in: namespace)
+        }
+    }
+}
+
 struct MenuBarView: View {
     let appState: AppState
     var isFloating = false
@@ -96,7 +111,7 @@ private struct ActiveSection: View {
                     appState: appState,
                     isFloating: isFloating
                 )
-                .matchedGeometryEffect(id: player.id, in: namespace)
+                .matchedGeometryConditional(id: player.id, in: namespace)
             }
             SectionDivider()
         }
@@ -127,7 +142,7 @@ private struct InGameSection: View {
                     appState: appState,
                     isFloating: isFloating
                 )
-                .matchedGeometryEffect(id: entry.player.id, in: namespace)
+                .matchedGeometryConditional(id: entry.player.id, in: namespace)
             }
             .animation(.easeInOut(duration: 0.3), value: entries.map { $0.proximity?.sortKey ?? 4 })
             SectionDivider()
@@ -150,7 +165,7 @@ private struct UpcomingSection: View {
             )
             ForEach(appState.upcomingPlayers) { player in
                 UpcomingPlayerRow(player: player, appState: appState)
-                    .matchedGeometryEffect(id: player.id, in: namespace)
+                    .matchedGeometryConditional(id: player.id, in: namespace)
             }
             if !appState.donePlayers.isEmpty {
                 SectionDivider()
@@ -174,7 +189,7 @@ private struct DoneSection: View {
             SectionHeader(title: "Done", showClose: showClose, isFloating: isFloating, appState: appState)
             ForEach(appState.donePlayers) { player in
                 DonePlayerRow(player: player, appState: appState)
-                    .matchedGeometryEffect(id: player.id, in: namespace)
+                    .matchedGeometryConditional(id: player.id, in: namespace)
             }
             if isFloating {
                 Spacer().frame(height: 8)
@@ -689,6 +704,7 @@ final class TeamLogoCache {
     static let shared = TeamLogoCache()
 
     private var memory: [String: NSImage] = [:]
+    var memoryCount: Int { memory.count }
     private let cacheDir: URL = {
         let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("TeamLogos", isDirectory: true)
@@ -898,8 +914,14 @@ final class FloatingPanel {
         if let panel {
             panel.close()
             self.panel = nil
+            MemoryProbeLogger.shared.notePopoutClosed()
         } else {
+            guard !MemDiagFlags.noPopout else {
+                print("[MemoryProbe] popout suppressed by memDiagNoPopout")
+                return
+            }
             show(appState: appState)
+            MemoryProbeLogger.shared.notePopoutOpened()
         }
     }
 
@@ -945,8 +967,10 @@ final class FloatingPanel {
     }
 
     func close() {
+        guard panel != nil else { return }
         panel?.close()
         panel = nil
+        MemoryProbeLogger.shared.notePopoutClosed()
     }
 }
 

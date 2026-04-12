@@ -79,9 +79,32 @@ struct MLBStatsAPI: Sendable {
 
     /// Decodes a LiveFeedData from raw JSON bytes (used after patching cached data).
     static func decodeLiveFeed(from data: Data) throws -> (feed: LiveFeedData, timecode: String?) {
+        if UserDefaults.standard.bool(forKey: "memDiagStubFeedDecode") {
+            return (Self.stubFeed, nil)
+        }
         let response = try JSONDecoder().decode(LiveFeedResponse.self, from: data)
         return (Self.parseLiveFeedResponse(response), response.metaData?.timeStamp)
     }
+
+    /// Empty feed used when `memDiagStubFeedDecode` is active. Breaks the live
+    /// UI on purpose — it's only for isolating Codable/parse allocator cost.
+    static let stubFeed = LiveFeedData(
+        gameState: "Preview",
+        detailedState: nil,
+        currentBatterID: nil, currentBatterName: nil,
+        currentPitcherID: nil, currentPitcherName: nil,
+        inning: nil, inningHalf: nil, inningState: nil,
+        homeScore: 0, awayScore: 0,
+        homeTeam: "", awayTeam: "",
+        homeTeamID: 0, awayTeamID: 0,
+        balls: 0, strikes: 0, outs: 0,
+        runnerOnFirst: nil, runnerOnSecond: nil, runnerOnThird: nil,
+        isPlayComplete: false,
+        lastPlayEvent: nil, lastPlayDescription: nil,
+        homeBattingOrder: [], awayBattingOrder: [],
+        homePitchers: [], awayPitchers: [],
+        playerStats: [:]
+    )
 
     // MARK: - Diff Patch
 

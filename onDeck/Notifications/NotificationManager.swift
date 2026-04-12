@@ -71,6 +71,10 @@ final class NotificationManager: Sendable {
     }
 
     func send(title: String, body: String, identifier: String? = nil, playerID: Int? = nil, clickURL: URL? = nil, autoDismissAfter: TimeInterval? = nil) async {
+        if MemDiagFlags.skipNotifications {
+            print("[MemoryProbe] suppressing notification: \(title)")
+            return
+        }
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         guard settings.authorizationStatus == .authorized else {
             print("[Notifications] Not authorized (status: \(settings.authorizationStatus.rawValue))")
