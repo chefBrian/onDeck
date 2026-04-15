@@ -326,6 +326,7 @@ final class AppState {
         var done: [Player] = []
 
         for player in rosterManager.players {
+            if player.isUnavailable { continue }
             if hideBenchPlayers && player.isOnBench { continue }
             switch stateManager.playerStates[player.id] {
             case .active:
@@ -389,6 +390,7 @@ final class AppState {
 
     private func handleStateTransition(playerID: Int, oldState: PlayerState?, newState: PlayerState) async {
         guard let player = rosterManager.players.first(where: { $0.id == playerID }) else { return }
+        if player.isUnavailable { return }
         if hideBenchPlayers && player.isOnBench { return }
         print("[Transition] \(player.name) (\(playerID)): \(String(describing: oldState)) -> \(String(describing: newState))")
 
