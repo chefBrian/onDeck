@@ -343,7 +343,11 @@ private struct LivePlayerRow: View {
                                 case .order:
                                     EmptyView()
                                 case nil:
-                                    EmptyView()
+                                    if isActive {
+                                        Circle()
+                                            .fill(.green)
+                                            .frame(width: 6, height: 6)
+                                    }
                                 }
                                 Text(player.name)
                                     .fontWeight(isActive ? .semibold : .medium)

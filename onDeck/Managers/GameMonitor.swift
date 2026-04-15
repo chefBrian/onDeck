@@ -255,21 +255,26 @@ final class GameMonitor {
     private func processFeed(_ feed: LiveFeedData, gamePk: Int, game: Game) {
         latestFeeds[gamePk] = feed
 
-        // Track lineup per side. Only overwrite a side when the feed actually
-        // has data for it - an empty side means that team hasn't filed its
-        // lineup card yet, not that we should drop what we already had.
-        let homeIDs = Set(feed.homeBattingOrder + feed.homePitchers)
-        let awayIDs = Set(feed.awayBattingOrder + feed.awayPitchers)
-        if !homeIDs.isEmpty || !awayIDs.isEmpty {
-            let existing = lineupPlayerIDs[gamePk] ?? GameLineup()
-            let updated = GameLineup(
-                home: homeIDs.isEmpty ? existing.home : homeIDs,
-                away: awayIDs.isEmpty ? existing.away : awayIDs
-            )
-            if updated != existing {
-                lineupPlayerIDs[gamePk] = updated
-                onLineupUpdate?(gamePk)
-            }
+        // Track lineup per side. Only overwrite a batting side when the feed
+        // actually has data for it - an empty side means that team hasn't
+        // filed its lineup card yet, not that we should drop what we had.
+        // Pitchers live in a separate set so that a submitted batting card
+        // (used to gate "not in lineup" logic) doesn't falsely flag the
+        // probable starter as missing before the boxscore lists him.
+        let homeBatters = Set(feed.homeBattingOrder)
+        let awayBatters = Set(feed.awayBattingOrder)
+        let homePitchers = Set(feed.homePitchers + [game.homeProbablePitcherID].compactMap { $0 })
+        let awayPitchers = Set(feed.awayPitchers + [game.awayProbablePitcherID].compactMap { $0 })
+        let existing = lineupPlayerIDs[gamePk] ?? GameLineup()
+        let updated = GameLineup(
+            home: homeBatters.isEmpty ? existing.home : homeBatters,
+            away: awayBatters.isEmpty ? existing.away : awayBatters,
+            homePitchers: homePitchers.isEmpty ? existing.homePitchers : homePitchers,
+            awayPitchers: awayPitchers.isEmpty ? existing.awayPitchers : awayPitchers
+        )
+        if updated != existing {
+            lineupPlayerIDs[gamePk] = updated
+            onLineupUpdate?(gamePk)
         }
 
         guard feed.gameState == "Live", feed.detailedState == "In Progress" else {
