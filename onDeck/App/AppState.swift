@@ -88,10 +88,9 @@ final class AppState {
         setupLineupUpdateHandler()
         setupGameStartHandler()
         setupSystemResumeHandler()
-        MemoryProbeLogger.shared.start(appState: self)
         Task {
             await start()
-            if alwaysOpenPopout && !FloatingPanel.shared.isShowing && !MemDiagFlags.noPopout {
+            if alwaysOpenPopout && !FloatingPanel.shared.isShowing {
                 FloatingPanel.shared.toggle(appState: self)
             }
         }
@@ -531,7 +530,6 @@ final class AppState {
         guard !rosterURL.isEmpty, effectiveTeamID != nil else { return }
 
         print("[AppState] Recovering from system resume - clearing caches and resyncing")
-        MemoryProbeLogger.shared.logEvent("systemResume")
         gameMonitor.clearCaches()
         await resyncRoster()
     }

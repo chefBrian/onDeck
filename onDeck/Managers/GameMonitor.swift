@@ -34,9 +34,6 @@ final class GameMonitor {
     /// Latest feed data per game (for In Game player display).
     var latestFeeds: [Int: LiveFeedData] = [:] // gamePk -> feed
 
-    /// Counter of completed poll cycles (all games combined). For memory probes.
-    private(set) var pollCount: Int = 0
-
     /// Lineup player IDs per game, tracked per side so consumers can tell
     /// whether a player's own team has submitted yet (vs just the opponent).
     var lineupPlayerIDs: [Int: GameLineup] = [:] // gamePk -> per-side lineup IDs
@@ -141,7 +138,6 @@ final class GameMonitor {
             }
 
             await pollCycle()
-            pollCount += 1
 
             // Once any game is in active polling range, switch to 10s loop
             let hasActiveGames = monitoredGames.values.contains {
@@ -462,30 +458,6 @@ final class GameMonitor {
 
         guard let next = nextTime else { return 0 }
         return max(0, next.timeIntervalSinceNow)
-    }
-
-    // MARK: - Memory Diagnostics
-
-    struct MemoryReport {
-        let monitoredGames: Int
-        let activeGames: Int
-        let latestFeeds: Int
-        let cachedFeedBytes: Int
-        let pollCount: Int
-    }
-
-    func memoryDiagnosticsReport() -> MemoryReport {
-        let active = monitoredGames.values.filter {
-            $0.startTime.addingTimeInterval(-15 * 60) <= Date.now
-        }.count
-        let cachedBytes = cachedFeedData.values.reduce(0) { $0 + $1.count }
-        return MemoryReport(
-            monitoredGames: monitoredGames.count,
-            activeGames: active,
-            latestFeeds: latestFeeds.count,
-            cachedFeedBytes: cachedBytes,
-            pollCount: pollCount
-        )
     }
 
     private func formatInning(_ feed: LiveFeedData) -> String {

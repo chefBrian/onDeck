@@ -113,16 +113,10 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 450, height: 400)
         .onAppear {
-            MemoryProbeLogger.shared.logEventWithTrailingSnapshots("settingsOpen")
-            if !UserDefaults.standard.bool(forKey: "memDiagNoActivationPolicy") {
-                NSApplication.shared.setActivationPolicy(.regular)
-            }
+            NSApplication.shared.setActivationPolicy(.regular)
         }
         .onDisappear {
-            MemoryProbeLogger.shared.logEventWithTrailingSnapshots("settingsClose")
-            if !UserDefaults.standard.bool(forKey: "memDiagNoActivationPolicy") {
-                NSApplication.shared.setActivationPolicy(.accessory)
-            }
+            NSApplication.shared.setActivationPolicy(.accessory)
         }
     }
 }
