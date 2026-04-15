@@ -106,6 +106,22 @@ final class MemoryProbeLogger {
         Task { await logRow(event: event) }
     }
 
+    /// Logs `event` immediately, plus follow-up snapshots at +0.5s/+2s/+5s.
+    /// Used to capture transient spikes around short-lived UI transitions
+    /// (Settings open/close) that the 60s tick would otherwise miss.
+    func logEventWithTrailingSnapshots(_ event: String) {
+        guard isEnabled else { return }
+        Task {
+            await logRow(event: event)
+            try? await Task.sleep(for: .milliseconds(500))
+            await logRow(event: "\(event)+0.5s")
+            try? await Task.sleep(for: .milliseconds(1500))
+            await logRow(event: "\(event)+2s")
+            try? await Task.sleep(for: .seconds(3))
+            await logRow(event: "\(event)+5s")
+        }
+    }
+
     func notePopoutOpened() {
         popoutOpenedAt = Date()
         logEvent("popoutOpen")
