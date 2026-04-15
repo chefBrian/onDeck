@@ -47,6 +47,12 @@ final class GameMonitor {
     /// Callback fired once per game the first time it transitions to Live/In Progress.
     var onGameStart: ((Int) -> Void)?
 
+    /// Whether the feed has observed this game as Live/In Progress. Driven by the feed, not the clock,
+    /// so late-starting games aren't misclassified.
+    func isLive(gamePk: Int) -> Bool {
+        liveGamesSeen.contains(gamePk)
+    }
+
     func configure(stateManager: StateManager) {
         self.stateManager = stateManager
     }

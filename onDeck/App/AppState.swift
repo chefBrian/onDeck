@@ -283,8 +283,12 @@ final class AppState {
 
     private func setupGameStartHandler() {
         gameMonitor.onGameStart = { [weak self] gamePk in
+            guard let self else { return }
+            // Game just flipped to In Progress per the feed - rebuild so .upcoming
+            // players on that game move to the in-game bucket.
+            self.schedulePlayerListRebuild()
             Task { @MainActor in
-                await self?.notificationManager.purgeNotInLineupNotifications(gamePk: gamePk)
+                await self.notificationManager.purgeNotInLineupNotifications(gamePk: gamePk)
             }
         }
     }
@@ -321,14 +325,13 @@ final class AppState {
         var upcoming: [Player] = []
         var done: [Player] = []
 
-        let now = Date.now
         for player in rosterManager.players {
             if hideBenchPlayers && player.isOnBench { continue }
             switch stateManager.playerStates[player.id] {
             case .active:
                 active.append(player)
-            case .upcoming(let startTime):
-                if startTime < now {
+            case .upcoming:
+                if let gamePk = gamePk(for: player), gameMonitor.isLive(gamePk: gamePk) {
                     inGame.append(player)
                 } else {
                     upcoming.append(player)
@@ -359,6 +362,13 @@ final class AppState {
             if a.isHitter != b.isHitter { return a.isHitter }
             return false
         }
+    }
+
+    private func gamePk(for player: Player) -> Int? {
+        games.first { game in
+            game.homeTeam.contains(player.team) || game.awayTeam.contains(player.team)
+                || player.team.contains(game.homeTeam) || player.team.contains(game.awayTeam)
+        }?.id
     }
 
     private func hasStatLine(player: Player, gamePk: Int) -> Bool {
