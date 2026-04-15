@@ -180,8 +180,14 @@ final class AppState {
             gameMonitor.startMonitoring(games: games, players: rosterManager.players)
             // Seed lineup data from schedule (available before live feed polling starts)
             for game in games {
-                let lineup = GameLineup(home: Set(game.homeLineup), away: Set(game.awayLineup))
-                if lineup.isSubmitted(for: .home) || lineup.isSubmitted(for: .away) {
+                let lineup = GameLineup(
+                    home: Set(game.homeLineup),
+                    away: Set(game.awayLineup),
+                    homePitchers: Set([game.homeProbablePitcherID].compactMap { $0 }),
+                    awayPitchers: Set([game.awayProbablePitcherID].compactMap { $0 })
+                )
+                if lineup.isSubmitted(for: .home) || lineup.isSubmitted(for: .away)
+                    || !lineup.homePitchers.isEmpty || !lineup.awayPitchers.isEmpty {
                     gameMonitor.lineupPlayerIDs[game.id] = lineup
                     await reconcileLineupNotifications(gamePk: game.id)
                 }

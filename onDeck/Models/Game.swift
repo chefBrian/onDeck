@@ -28,16 +28,23 @@ struct Game: Identifiable, Hashable {
 }
 
 /// Lineup IDs tracked per side so consumers can tell whether a player's
-/// own team has submitted yet (vs just the opponent).
+/// own team has submitted yet (vs just the opponent). Batters and pitchers
+/// are tracked separately: `isSubmitted` reflects the batting card only
+/// (pitchers come from a different source and shouldn't gate hitter checks),
+/// while `ids(for:)` returns the union so membership tests cover both roles.
 struct GameLineup: Equatable {
     var home: Set<Int> = []
     var away: Set<Int> = []
+    var homePitchers: Set<Int> = []
+    var awayPitchers: Set<Int> = []
 
     func ids(for side: Game.Side) -> Set<Int> {
-        side == .home ? home : away
+        let batters = side == .home ? home : away
+        let pitchers = side == .home ? homePitchers : awayPitchers
+        return batters.union(pitchers)
     }
 
     func isSubmitted(for side: Game.Side) -> Bool {
-        !ids(for: side).isEmpty
+        !(side == .home ? home : away).isEmpty
     }
 }
