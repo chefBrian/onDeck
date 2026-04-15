@@ -10,7 +10,8 @@ struct Player: Identifiable, Hashable {
 
     var isPitcher: Bool { positions.contains(.pitcher) }
     var isHitter: Bool { positions.contains(.hitter) }
-    var isOnBench: Bool { rosterStatus != .active }
+    var isOnBench: Bool { rosterStatus == .reserve }
+    var isUnavailable: Bool { rosterStatus == .injuredReserve || rosterStatus == .minors }
     var isStartingPitcherOnly: Bool { fantraxPositions.contains("SP") && !fantraxPositions.contains("RP") && !isHitter }
 
     enum PlayerPosition: String, Hashable, Codable {
