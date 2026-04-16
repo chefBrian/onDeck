@@ -77,6 +77,7 @@ final class GameMonitor {
     }
 
     func stopMonitoring() {
+        let wasMonitoring = isMonitoring
         coordinatorTask?.cancel()
         coordinatorTask = nil
         monitoredGames.removeAll()
@@ -93,6 +94,11 @@ final class GameMonitor {
         latestFeeds.removeAll()
         lastPlayDescriptions.removeAll()
         isMonitoring = false
+        // startMonitoring() calls stopMonitoring() as part of its reset; skip the
+        // pressure relief there since we're about to allocate for new work.
+        if wasMonitoring {
+            MemoryPressureRelief.releaseReclaimablePages(reason: "full stop (day rollover)")
+        }
     }
 
     /// Nulls each cached feed's timeStamp so the next poll cycle does a full
@@ -121,6 +127,7 @@ final class GameMonitor {
             coordinatorTask?.cancel()
             coordinatorTask = nil
             isMonitoring = false
+            MemoryPressureRelief.releaseReclaimablePages(reason: "last game ended")
         }
     }
 
