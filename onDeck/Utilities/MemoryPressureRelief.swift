@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import os.log
 
 /// Asks libmalloc to return reclaimable pages to the OS.
 ///
@@ -18,11 +19,13 @@ import Foundation
 /// pay the syscall cost for nothing.
 enum MemoryPressureRelief {
 
+    private static let logger = Logger(subsystem: "dev.bjc.onDeck", category: "memory")
+
     static func releaseReclaimablePages(reason: String) {
         let before = currentFootprintMB()
         let released = malloc_zone_pressure_relief(nil, 0)
         let after = currentFootprintMB()
-        print("[MemoryRelief] \(reason): released \(released / 1024 / 1024)MB; footprint \(before)MB -> \(after)MB")
+        logger.notice("\(reason, privacy: .public): released \(released / 1024 / 1024, privacy: .public)MB; footprint \(before, privacy: .public)MB -> \(after, privacy: .public)MB")
     }
 
     private static func currentFootprintMB() -> Int {
