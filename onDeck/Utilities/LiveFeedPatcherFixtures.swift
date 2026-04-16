@@ -2,10 +2,10 @@
 import Foundation
 
 /// Minimal captured fixtures for `LiveFeedPatcherTests`.
-/// Fixtures are small by design — we're testing dispatch correctness, not volume.
+/// Fixtures are small by design - we're testing dispatch correctness, not volume.
 enum LiveFeedPatcherFixtures {
 
-    /// Minimal canonical feed — just enough shape for parse + patch round-trips.
+    /// Minimal canonical feed - just enough shape for parse + patch round-trips.
     static let baseFeedJSON: String = """
     {
       "metaData": {"timeStamp": "20260416_180000"},
@@ -113,7 +113,7 @@ enum LiveFeedPatcherFixtures {
     }
     """
 
-    /// Scalar-leaf patches — the 75% case from Phase 1.
+    /// Scalar-leaf patches - the 75% case from Phase 1.
     static let scalarReplacesPatch: [[String: Any]] = [
         ["op": "replace", "path": "/metaData/timeStamp", "value": "20260416_180010"],
         ["op": "add", "path": "/liveData/plays/currentPlay/result/event", "value": "Home Run"],
@@ -132,12 +132,12 @@ enum LiveFeedPatcherFixtures {
         ["op": "replace", "path": "/liveData/boxscore/teams/home/players/ID2/stats/pitching/numberOfPitches", "value": 6],
     ]
 
-    /// `move` on offense — runner advance from first to second.
+    /// `move` on offense - runner advance from first to second.
     static let runnerMoveFirstToSecondPatch: [[String: Any]] = [
         ["op": "move", "from": "/liveData/linescore/offense/first", "path": "/liveData/linescore/offense/second"]
     ]
 
-    /// Decorative path — must be logged and skipped, not throw.
+    /// Decorative path - must be logged and skipped, not throw.
     static let decorativePatch: [[String: Any]] = [
         ["op": "replace", "path": "/liveData/plays/currentPlay/playEvents/0/details/code", "value": "F"]
     ]

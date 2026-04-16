@@ -1,7 +1,7 @@
 import Foundation
 
 /// Applies RFC 6902 JSON patches produced by MLB's `/feed/live/diffPatch` endpoint
-/// directly to a `LiveFeedData` struct — no JSON object graph, no reserialize, no Codable.
+/// directly to a `LiveFeedData` struct - no JSON object graph, no reserialize, no Codable.
 ///
 /// Two-tier dispatch: registered (opType, path) pairs mutate typed fields; any other
 /// op records via `UnknownPatchLogger` and is silently skipped. See
@@ -11,7 +11,7 @@ import Foundation
 enum LiveFeedPatcher {
 
     /// Apply patches to a working copy, then commit back to `feed`.
-    /// Partial state never escapes — callers get either the fully patched struct
+    /// Partial state never escapes - callers get either the fully patched struct
     /// or the original on any handler-internal error (there are none currently).
     static func apply(_ ops: [[String: Any]], to feed: inout LiveFeedData) {
         var working = feed
@@ -58,7 +58,7 @@ enum LiveFeedPatcher {
             feed.detailedState = nil
             return
 
-        // --- gameData/teams  (rare — name/id shouldn't change mid-game, but register defensively)
+        // --- gameData/teams  (rare - name/id shouldn't change mid-game, but register defensively)
         case ("replace", "/gameData/teams/home/name"):
             if let s = value as? String { feed.homeTeam = s }
             return
@@ -148,7 +148,7 @@ enum LiveFeedPatcher {
             feed.awayScore = intValue(value) ?? feed.awayScore
             return
 
-        // --- linescore / offense — scalar runner IDs
+        // --- linescore / offense - scalar runner IDs
         case ("replace", "/liveData/linescore/offense/first/id"),
              ("add", "/liveData/linescore/offense/first/id"):
             feed.runnerOnFirst = intValue(value)
@@ -174,7 +174,7 @@ enum LiveFeedPatcher {
             feed.runnerOnThird = nil
             return
 
-        // --- linescore / offense — typed runner advance (move ops; see PHASE-1-TRACE)
+        // --- linescore / offense - typed runner advance (move ops; see PHASE-1-TRACE)
         case ("move", "/liveData/linescore/offense/second"):
             if from == "/liveData/linescore/offense/first" {
                 feed.runnerOnSecond = feed.runnerOnFirst
@@ -201,7 +201,7 @@ enum LiveFeedPatcher {
         if tryApplyBoxscoreArrayPatch(opType: opType, path: path, value: value, feed: &feed) { return }
         if tryApplyPlayerStatsPatch(opType: opType, path: path, value: value, feed: &feed) { return }
 
-        // Fallthrough: unknown op — log and skip
+        // Fallthrough: unknown op - log and skip
         UnknownPatchLogger.shared.record(op: opType, path: path, from: from, value: value)
     }
 
@@ -367,7 +367,7 @@ enum LiveFeedPatcher {
                 return true
             }
 
-            // Other player subtrees (person, position, seasonStats, etc.) — not modeled
+            // Other player subtrees (person, position, seasonStats, etc.) - not modeled
             return false
         }
         return false
@@ -386,7 +386,7 @@ enum LiveFeedPatcher {
         case "baseOnBalls": b.baseOnBalls = n
         case "strikeOuts": b.strikeOuts = n
         case "stolenBases": b.stolenBases = n
-        default: break  // Decorative batting field — ignored.
+        default: break  // Decorative batting field - ignored.
         }
     }
 
@@ -404,7 +404,7 @@ enum LiveFeedPatcher {
             p.baseOnBalls = (opType == "remove") ? nil : intValue(value)
         case "numberOfPitches":
             p.numberOfPitches = (opType == "remove") ? nil : intValue(value)
-        default: break  // Decorative pitching field — ignored.
+        default: break  // Decorative pitching field - ignored.
         }
     }
 

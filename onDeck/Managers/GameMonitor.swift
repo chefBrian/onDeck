@@ -87,9 +87,9 @@ final class GameMonitor {
         lineupPlayerIDs.removeAll()
         liveGamesSeen.removeAll()
         completedMilestones.removeAll()
-        // Full stop (e.g. midnight refresh) drops per-game feed caches too.
-        // The per-game stopMonitoring(gamePk:) intentionally retains latestFeeds
-        // so the Done section can keep reading stats for finished games.
+        // Full stop (e.g. midnight refresh) drops latestFeeds. The per-game
+        // stopMonitoring(gamePk:) intentionally retains latestFeeds so the
+        // Done section can keep reading stats for finished games.
         latestFeeds.removeAll()
         lastPlayDescriptions.removeAll()
         isMonitoring = false
@@ -103,7 +103,7 @@ final class GameMonitor {
         for key in latestFeeds.keys {
             latestFeeds[key]?.timeStamp = nil
         }
-        print("[GameMonitor] Timecodes invalidated (stale — next poll does full fetch per game)")
+        print("[GameMonitor] Timecodes invalidated (stale - next poll does full fetch per game)")
     }
 
     /// Stops monitoring a specific game (e.g., when no roster players remain).
@@ -217,7 +217,7 @@ final class GameMonitor {
                     feed = decoded
                 }
             } else {
-                // No seed — full fetch
+                // No seed - full fetch
                 let decoded = try await mlbAPI.fetchLiveFeedRaw(gamePk: gamePk, label: label)
                 latestFeeds[gamePk] = decoded
                 feed = decoded
@@ -234,7 +234,7 @@ final class GameMonitor {
                 stopMonitoring(gamePk: gamePk)
             }
         } catch {
-            // Transient error — preserve last-known feed for UI continuity, but
+            // Transient error - preserve last-known feed for UI continuity, but
             // null its timeStamp so the next cycle does a full fetch.
             latestFeeds[gamePk]?.timeStamp = nil
             print("[GameMonitor] Error for game \(gamePk): \(error) - will full-fetch next cycle")
@@ -244,8 +244,6 @@ final class GameMonitor {
     // MARK: - Feed Processing
 
     private func processFeed(_ feed: LiveFeedData, gamePk: Int, game: Game) {
-        latestFeeds[gamePk] = feed
-
         // Track lineup per side. Only overwrite a batting side when the feed
         // actually has data for it - an empty side means that team hasn't
         // filed its lineup card yet, not that we should drop what we had.

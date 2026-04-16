@@ -5,7 +5,7 @@ import Foundation
 /// Writes to `~/Library/Containers/<bundle-id>/Data/Library/Caches/onDeck-unknown-patches.csv`
 /// with a 10 MB rotation cap. Console output prefixed `[LiveFeedPatcher] unknown: …`.
 ///
-/// Reviewed periodically — any frequently-seen path on a field we care about
+/// Reviewed periodically - any frequently-seen path on a field we care about
 /// becomes a new patcher handler in a follow-up round.
 final class UnknownPatchLogger: @unchecked Sendable {
     static let shared = UnknownPatchLogger()

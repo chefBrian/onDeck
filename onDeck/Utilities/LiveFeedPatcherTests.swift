@@ -4,7 +4,7 @@ import Foundation
 /// DEBUG-only self-tests for `LiveFeedPatcher`. Invoked at app launch;
 /// failures trigger `preconditionFailure` so broken patcher code cannot ship.
 ///
-/// This is not XCTest — the project has no test target. It's a sequence of
+/// This is not XCTest - the project has no test target. It's a sequence of
 /// assertions that run in-process in under ~100 ms.
 enum LiveFeedPatcherTests {
 
