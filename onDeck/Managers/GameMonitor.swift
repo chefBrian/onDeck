@@ -18,10 +18,6 @@ final class GameMonitor {
     private var lastHomePitcherID: [Int: Int] = [:] // gamePk -> last pitcher for home team
     private var lastAwayPitcherID: [Int: Int] = [:] // gamePk -> last pitcher for away team
 
-    /// Cached raw feed data for diffPatch optimization.
-    private var cachedFeedData: [Int: Data] = [:] // gamePk -> raw JSON bytes
-    private var cachedTimecodes: [Int: String] = [:] // gamePk -> metaData.timeStamp
-
     /// Pre-game milestone times (seconds before game start) for one-shot lineup checks.
     private static let preGameMilestones: [TimeInterval] = [2 * 3600, 1 * 3600, 30 * 60]
 
@@ -90,8 +86,6 @@ final class GameMonitor {
         lastAwayPitcherID.removeAll()
         lineupPlayerIDs.removeAll()
         liveGamesSeen.removeAll()
-        cachedFeedData.removeAll()
-        cachedTimecodes.removeAll()
         completedMilestones.removeAll()
         // Full stop (e.g. midnight refresh) drops per-game feed caches too.
         // The per-game stopMonitoring(gamePk:) intentionally retains latestFeeds
@@ -101,19 +95,20 @@ final class GameMonitor {
         isMonitoring = false
     }
 
-    /// Clears cached feed data and timecodes so the next poll cycle does full fetches.
-    /// Used after system wake when cached timecodes are stale.
-    func clearCaches() {
-        cachedFeedData.removeAll()
-        cachedTimecodes.removeAll()
-        print("[GameMonitor] Caches cleared (stale timecodes discarded)")
+    /// Nulls each cached feed's timeStamp so the next poll cycle does a full
+    /// fetch per game. Used after system wake when stored timecodes are stale.
+    /// Preserves the rest of each `LiveFeedData` so the UI keeps rendering
+    /// last-known state during the round trip.
+    func invalidateTimecodes() {
+        for key in latestFeeds.keys {
+            latestFeeds[key]?.timeStamp = nil
+        }
+        print("[GameMonitor] Timecodes invalidated (stale — next poll does full fetch per game)")
     }
 
     /// Stops monitoring a specific game (e.g., when no roster players remain).
     func stopMonitoring(gamePk: Int) {
         monitoredGames.removeValue(forKey: gamePk)
-        cachedFeedData.removeValue(forKey: gamePk)
-        cachedTimecodes.removeValue(forKey: gamePk)
         lineupPlayerIDs.removeValue(forKey: gamePk)
         lastBatterID.removeValue(forKey: gamePk)
         lastPitcherID.removeValue(forKey: gamePk)
@@ -190,23 +185,20 @@ final class GameMonitor {
         await withTaskGroup(of: Void.self) { group in
             for gamePk in gamesToPoll {
                 guard let game = monitoredGames[gamePk] else { continue }
-                let cached = cachedFeedData[gamePk]
-                let timecode = cachedTimecodes[gamePk]
-
                 group.addTask { [weak self] in
                     guard let self else { return }
-                    await self.pollSingleGame(gamePk: gamePk, game: game, cachedData: cached, timecode: timecode)
+                    await self.pollSingleGame(gamePk: gamePk, game: game)
                 }
             }
         }
     }
 
-    private func pollSingleGame(gamePk: Int, game: Game, cachedData: Data?, timecode: String?) async {
+    private func pollSingleGame(gamePk: Int, game: Game) async {
         let label = "\(TeamMapping.abbreviation(for: game.awayTeam))@\(TeamMapping.abbreviation(for: game.homeTeam))"
         do {
             let feed: LiveFeedData
 
-            if let cachedData, let timecode {
+            if let existing = latestFeeds[gamePk], let timecode = existing.timeStamp {
                 let result = try await mlbAPI.fetchDiffPatch(gamePk: gamePk, since: timecode, label: label)
 
                 switch result {
@@ -214,28 +206,21 @@ final class GameMonitor {
                     return
 
                 case .patches(let patches):
-                    var json = try JSONSerialization.jsonObject(with: cachedData)
-                    try JSONPatch.apply(patches, to: &json)
-                    let newData = try JSONSerialization.data(withJSONObject: json)
-                    let decoded = try MLBStatsAPI.decodeLiveFeed(from: newData)
-                    feed = decoded
-                    cachedFeedData[gamePk] = newData
-                    if let newTimecode = decoded.timeStamp { cachedTimecodes[gamePk] = newTimecode }
+                    var working = existing
+                    LiveFeedPatcher.apply(patches, to: &working)
+                    latestFeeds[gamePk] = working
+                    feed = working
 
                 case .fullUpdate(let rawData):
-                    // API returns full feed during game phase transitions (inning changes, etc.)
-                    // Decode directly instead of re-fetching - patches resume next cycle
                     let decoded = try MLBStatsAPI.decodeLiveFeed(from: rawData)
+                    latestFeeds[gamePk] = decoded
                     feed = decoded
-                    cachedFeedData[gamePk] = rawData
-                    if let newTimecode = decoded.timeStamp { cachedTimecodes[gamePk] = newTimecode }
                 }
             } else {
-                // No cache - full fetch
-                let (decoded, rawData, newTimecode) = try await mlbAPI.fetchLiveFeedRaw(gamePk: gamePk, label: label)
+                // No seed — full fetch
+                let decoded = try await mlbAPI.fetchLiveFeedRaw(gamePk: gamePk, label: label)
+                latestFeeds[gamePk] = decoded
                 feed = decoded
-                cachedFeedData[gamePk] = rawData
-                if let newTimecode { cachedTimecodes[gamePk] = newTimecode }
             }
 
             processFeed(feed, gamePk: gamePk, game: game)
@@ -249,9 +234,9 @@ final class GameMonitor {
                 stopMonitoring(gamePk: gamePk)
             }
         } catch {
-            // Clear cache so next cycle does a full fetch
-            cachedFeedData.removeValue(forKey: gamePk)
-            cachedTimecodes.removeValue(forKey: gamePk)
+            // Transient error — preserve last-known feed for UI continuity, but
+            // null its timeStamp so the next cycle does a full fetch.
+            latestFeeds[gamePk]?.timeStamp = nil
             print("[GameMonitor] Error for game \(gamePk): \(error) - will full-fetch next cycle")
         }
     }

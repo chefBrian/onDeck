@@ -67,14 +67,13 @@ struct MLBStatsAPI: Sendable {
 
     // MARK: - Live Feed
 
-    /// Fetches the full live feed and returns parsed data + raw bytes for caching.
-    func fetchLiveFeedRaw(gamePk: Int, label: String? = nil) async throws -> (feed: LiveFeedData, rawData: Data, timecode: String?) {
+    /// Fetches the full live feed and returns parsed data.
+    func fetchLiveFeedRaw(gamePk: Int, label: String? = nil) async throws -> LiveFeedData {
         let url = URL(string: "https://statsapi.mlb.com/api/v1.1/game/\(gamePk)/feed/live")!
         let (data, _) = try await URLSession.shared.data(from: url)
         let tag = label.map { " \($0)" } ?? ""
         print("[MLB API] GET /feed/live game=\(gamePk)\(tag) \(Self.formatBytes(data.count))")
-        let feed = try Self.decodeLiveFeed(from: data)
-        return (feed, data, feed.timeStamp)
+        return try Self.decodeLiveFeed(from: data)
     }
 
     /// Decodes a LiveFeedData from raw JSON bytes (used after patching cached data).
@@ -124,9 +123,6 @@ struct MLBStatsAPI: Sendable {
         }
 
         print("[MLB API] GET /diffPatch game=\(gamePk)\(tag) \(Self.formatBytes(data.count)) \(allPatches.count) ops")
-#if DEBUG
-        DiffPatchTraceLogger.shared.record(gamePk: gamePk, ops: allPatches)
-#endif
         return .patches(allPatches)
     }
 
@@ -242,7 +238,7 @@ enum DiffPatchResult {
 // MARK: - Public Live Feed Model
 
 struct LiveFeedData: Sendable, Equatable {
-    var timeStamp: String?             // from /metaData/timeStamp — replaces cachedTimecodes
+    var timeStamp: String?             // from /metaData/timeStamp - used as diffPatch startTimecode
     var gameState: String              // "Preview", "Live", "Final"
     var detailedState: String?         // "Pre-Game", "Warmup", "In Progress", etc.
     var currentBatterID: Int?

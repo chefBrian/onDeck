@@ -542,7 +542,7 @@ final class AppState {
         guard !rosterURL.isEmpty, effectiveTeamID != nil else { return }
 
         print("[AppState] Recovering from system resume - clearing caches and resyncing")
-        gameMonitor.clearCaches()
+        gameMonitor.invalidateTimecodes()
         await resyncRoster()
     }
 
