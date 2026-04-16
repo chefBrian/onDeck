@@ -28,7 +28,7 @@ enum MemoryPressureRelief {
         logger.notice("\(reason, privacy: .public): released \(released / 1024 / 1024, privacy: .public)MB; footprint \(before, privacy: .public)MB -> \(after, privacy: .public)MB")
     }
 
-    private static func currentFootprintMB() -> Int {
+    static func currentFootprintMB() -> Int {
         var info = task_vm_info_data_t()
         var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.stride / MemoryLayout<integer_t>.stride)
         let kr = withUnsafeMutablePointer(to: &info) {

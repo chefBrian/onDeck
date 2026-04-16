@@ -757,6 +757,15 @@ struct FooterButtons: View {
                 FloatingPanel.shared.toggle(appState: appState)
             }
             Spacer()
+            #if DEBUG
+            footerButton(systemIcon: "bell.badge", label: "Probe") {
+                dismissMenu()
+                Task {
+                    let ids = appState.rosterManager.players.map(\.id)
+                    await NotificationRetentionProbe.run(rosterIDs: ids)
+                }
+            }
+            #endif
             footerButton(systemIcon: "power", label: "Quit") {
                 NSApplication.shared.terminate(nil)
             }
