@@ -376,9 +376,9 @@ final class AppState {
         guard let feed = gameMonitor.latestFeeds[gamePk],
               let stats = feed.playerStats[player.id] else { return false }
         if player.isPitcher && !player.isHitter {
-            return stats.pitchingLine != nil
+            return stats.pitching?.formatted != nil
         }
-        return stats.battingLine != nil
+        return stats.batting?.formatted != nil
     }
 
     // MARK: - Notifications

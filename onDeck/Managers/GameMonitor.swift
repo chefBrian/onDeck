@@ -217,18 +217,18 @@ final class GameMonitor {
                     var json = try JSONSerialization.jsonObject(with: cachedData)
                     try JSONPatch.apply(patches, to: &json)
                     let newData = try JSONSerialization.data(withJSONObject: json)
-                    let (decoded, newTimecode) = try MLBStatsAPI.decodeLiveFeed(from: newData)
+                    let decoded = try MLBStatsAPI.decodeLiveFeed(from: newData)
                     feed = decoded
                     cachedFeedData[gamePk] = newData
-                    if let newTimecode { cachedTimecodes[gamePk] = newTimecode }
+                    if let newTimecode = decoded.timeStamp { cachedTimecodes[gamePk] = newTimecode }
 
                 case .fullUpdate(let rawData):
                     // API returns full feed during game phase transitions (inning changes, etc.)
                     // Decode directly instead of re-fetching - patches resume next cycle
-                    let (decoded, newTimecode) = try MLBStatsAPI.decodeLiveFeed(from: rawData)
+                    let decoded = try MLBStatsAPI.decodeLiveFeed(from: rawData)
                     feed = decoded
                     cachedFeedData[gamePk] = rawData
-                    if let newTimecode { cachedTimecodes[gamePk] = newTimecode }
+                    if let newTimecode = decoded.timeStamp { cachedTimecodes[gamePk] = newTimecode }
                 }
             } else {
                 // No cache - full fetch
@@ -403,7 +403,7 @@ final class GameMonitor {
             for id in rosterPlayerIDs {
                 guard id != currentForSide,
                       pitchers.contains(id),
-                      feed.playerStats[id]?.pitchingLine != nil,
+                      feed.playerStats[id]?.pitching?.formatted != nil,
                       let player = rosterPlayers[id],
                       player.isPitcher && !player.isHitter else { continue }
                 let currentState = stateManager?.playerStates[id]
