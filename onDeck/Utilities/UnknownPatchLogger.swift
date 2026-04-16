@@ -5,15 +5,19 @@ import Foundation
 /// Writes to `~/Library/Containers/<bundle-id>/Data/Library/Caches/onDeck-unknown-patches.csv`
 /// with a 10 MB rotation cap. Console output prefixed `[LiveFeedPatcher] unknown: …`.
 ///
-/// Reviewed periodically - any frequently-seen path on a field we care about
-/// becomes a new patcher handler in a follow-up round.
+/// Per-key sampling: each unique (op, path) pair is logged up to `maxPerKey` times,
+/// after which further occurrences are silently counted. This keeps the logger from
+/// allocating ~500 rows/min on decorative paths while still surfacing new handlers
+/// to register.
 final class UnknownPatchLogger: @unchecked Sendable {
     static let shared = UnknownPatchLogger()
 
     private let fileURL: URL
     private let lock = NSLock()
     private let maxBytes: Int = 10 * 1024 * 1024
+    private let maxPerKey: Int = 3
     private var didWriteHeader = false
+    private var keyCounts: [String: Int] = [:]
 
     private init() {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
@@ -21,6 +25,15 @@ final class UnknownPatchLogger: @unchecked Sendable {
     }
 
     func record(op: String, path: String, from: String?, value: Any?) {
+        let key = "\(op)|\(path)"
+
+        lock.lock()
+        let count = keyCounts[key, default: 0] + 1
+        keyCounts[key] = count
+        lock.unlock()
+
+        if count > maxPerKey { return }
+
         let timestamp = Self.isoFormatter.string(from: Date())
         let fromField = from ?? ""
         let preview = Self.previewValue(value)

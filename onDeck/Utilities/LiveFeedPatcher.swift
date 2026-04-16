@@ -148,6 +148,20 @@ enum LiveFeedPatcher {
             feed.awayScore = intValue(value) ?? feed.awayScore
             return
 
+        // --- linescore mirrors of currentPlay count (MLB emits both, linescore fires more often)
+        case ("replace", "/liveData/linescore/balls"),
+             ("add", "/liveData/linescore/balls"):
+            feed.balls = intValue(value) ?? feed.balls
+            return
+        case ("replace", "/liveData/linescore/strikes"),
+             ("add", "/liveData/linescore/strikes"):
+            feed.strikes = intValue(value) ?? feed.strikes
+            return
+        case ("replace", "/liveData/linescore/outs"),
+             ("add", "/liveData/linescore/outs"):
+            feed.outs = intValue(value) ?? feed.outs
+            return
+
         // --- linescore / offense - scalar runner IDs
         case ("replace", "/liveData/linescore/offense/first/id"),
              ("add", "/liveData/linescore/offense/first/id"):
