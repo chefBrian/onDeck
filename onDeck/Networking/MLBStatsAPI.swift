@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+private let log = Logger(subsystem: "dev.bjc.onDeck", category: "MLB API")
 
 struct MLBStatsAPI: Sendable {
 
@@ -8,7 +11,7 @@ struct MLBStatsAPI: Sendable {
         let cleanName = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? name
         let url = URL(string: "https://statsapi.mlb.com/api/v1/people/search?names=\(cleanName)&hydrate=currentTeam")!
         let (data, _) = try await URLSession.shared.data(from: url)
-        print("[MLB API] GET /people/search name=\(name) \(Self.formatBytes(data.count))")
+        log.debug("[MLB API] GET /people/search name=\(name, privacy: .public) \(Self.formatBytes(data.count), privacy: .public)")
         let response = try JSONDecoder().decode(SearchResponse.self, from: data)
 
         guard let people = response.people, !people.isEmpty else { return nil }
@@ -35,7 +38,7 @@ struct MLBStatsAPI: Sendable {
         let dateString = Self.dateFormatter.string(from: date)
         let url = URL(string: "https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=\(dateString)&hydrate=team,broadcasts,probablePitcher,lineups")!
         let (data, _) = try await URLSession.shared.data(from: url)
-        print("[MLB API] GET /schedule date=\(dateString) \(Self.formatBytes(data.count))")
+        log.debug("[MLB API] GET /schedule date=\(dateString, privacy: .public) \(Self.formatBytes(data.count), privacy: .public)")
         let response = try JSONDecoder().decode(ScheduleResponse.self, from: data)
 
         return response.dates?.flatMap { date in
@@ -67,20 +70,19 @@ struct MLBStatsAPI: Sendable {
 
     // MARK: - Live Feed
 
-    /// Fetches the full live feed and returns parsed data + raw bytes + timecode for caching.
-    func fetchLiveFeedRaw(gamePk: Int, label: String? = nil) async throws -> (feed: LiveFeedData, rawData: Data, timecode: String?) {
+    /// Fetches the full live feed and returns parsed data.
+    func fetchLiveFeedRaw(gamePk: Int, label: String? = nil) async throws -> LiveFeedData {
         let url = URL(string: "https://statsapi.mlb.com/api/v1.1/game/\(gamePk)/feed/live")!
         let (data, _) = try await URLSession.shared.data(from: url)
         let tag = label.map { " \($0)" } ?? ""
-        print("[MLB API] GET /feed/live game=\(gamePk)\(tag) \(Self.formatBytes(data.count))")
-        let (feed, timecode) = try Self.decodeLiveFeed(from: data)
-        return (feed, data, timecode)
+        log.debug("[MLB API] GET /feed/live game=\(gamePk)\(tag, privacy: .public) \(Self.formatBytes(data.count), privacy: .public)")
+        return try Self.decodeLiveFeed(from: data)
     }
 
     /// Decodes a LiveFeedData from raw JSON bytes (used after patching cached data).
-    static func decodeLiveFeed(from data: Data) throws -> (feed: LiveFeedData, timecode: String?) {
+    static func decodeLiveFeed(from data: Data) throws -> LiveFeedData {
         let response = try JSONDecoder().decode(LiveFeedResponse.self, from: data)
-        return (Self.parseLiveFeedResponse(response), response.metaData?.timeStamp)
+        return Self.parseLiveFeedResponse(response)
     }
 
     // MARK: - Diff Patch
@@ -96,17 +98,17 @@ struct MLBStatsAPI: Sendable {
 
         // API sometimes returns a single feed object (dict) instead of an array
         if parsed is [String: Any] {
-            print("[MLB API] GET /diffPatch game=\(gamePk)\(tag) \(Self.formatBytes(data.count)) full update")
+            log.debug("[MLB API] GET /diffPatch game=\(gamePk)\(tag, privacy: .public) \(Self.formatBytes(data.count), privacy: .public) full update")
             return .fullUpdate(data)
         }
 
         guard let array = parsed as? [[String: Any]] else {
-            print("[MLB API] GET /diffPatch game=\(gamePk)\(tag) \(Self.formatBytes(data.count)) (unparseable)")
+            log.debug("[MLB API] GET /diffPatch game=\(gamePk)\(tag, privacy: .public) \(Self.formatBytes(data.count), privacy: .public) (unparseable)")
             return .fullUpdate(data)
         }
 
         if array.isEmpty {
-            print("[MLB API] GET /diffPatch game=\(gamePk)\(tag) \(Self.formatBytes(data.count)) no changes")
+            log.debug("[MLB API] GET /diffPatch game=\(gamePk)\(tag, privacy: .public) \(Self.formatBytes(data.count), privacy: .public) no changes")
             return .noChanges
         }
 
@@ -118,12 +120,12 @@ struct MLBStatsAPI: Sendable {
             } else {
                 // API returned a full feed object instead of patches - serialize it back
                 let entryData = try JSONSerialization.data(withJSONObject: entry)
-                print("[MLB API] GET /diffPatch game=\(gamePk)\(tag) \(Self.formatBytes(data.count)) full update")
+                log.debug("[MLB API] GET /diffPatch game=\(gamePk)\(tag, privacy: .public) \(Self.formatBytes(data.count), privacy: .public) full update")
                 return .fullUpdate(entryData)
             }
         }
 
-        print("[MLB API] GET /diffPatch game=\(gamePk)\(tag) \(Self.formatBytes(data.count)) \(allPatches.count) ops")
+        log.debug("[MLB API] GET /diffPatch game=\(gamePk)\(tag, privacy: .public) \(Self.formatBytes(data.count), privacy: .public) \(allPatches.count) ops")
         return .patches(allPatches)
     }
 
@@ -144,6 +146,7 @@ struct MLBStatsAPI: Sendable {
         let playerStats = parsePlayerStats(boxscore: boxscore)
 
         return LiveFeedData(
+            timeStamp: response.metaData?.timeStamp,
             gameState: response.gameData.status.abstractGameState,
             detailedState: response.gameData.status.detailedState,
             currentBatterID: currentPlay?.matchup.batter.id,
@@ -184,7 +187,7 @@ struct MLBStatsAPI: Sendable {
         let encoded = timestamp.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? timestamp
         let url = URL(string: "https://statsapi.mlb.com/api/v1/game/changes?updatedSince=\(encoded)&sportId=1")!
         let (data, _) = try await URLSession.shared.data(from: url)
-        print("[MLB API] GET /game/changes \(Self.formatBytes(data.count))")
+        log.debug("[MLB API] GET /game/changes \(Self.formatBytes(data.count), privacy: .public)")
         let response = try JSONDecoder().decode(GameChangesResponse.self, from: data)
         let gamePks = response.dates?.flatMap { $0.games.map(\.gamePk) } ?? []
         return Set(gamePks)
@@ -203,40 +206,13 @@ struct MLBStatsAPI: Sendable {
                       let id = Int(idStr),
                       let stats = player.stats else { continue }
 
-                let battingLine = formatBattingLine(stats.batting)
-                let pitchingLine = formatPitchingLine(stats.pitching)
-                if battingLine != nil || pitchingLine != nil {
-                    result[id] = PlayerGameStats(battingLine: battingLine, pitchingLine: pitchingLine)
+                let entry = PlayerGameStats(batting: stats.batting, pitching: stats.pitching)
+                if entry.batting != nil || entry.pitching != nil {
+                    result[id] = entry
                 }
             }
         }
         return result
-    }
-
-    private static func formatBattingLine(_ batting: FeedBattingStats?) -> String? {
-        guard let b = batting, let ab = b.atBats else { return nil }
-        let hasActivity = ab > 0 || (b.baseOnBalls ?? 0) > 0 || (b.stolenBases ?? 0) > 0
-        guard hasActivity else { return nil }
-        var line = "\(b.hits ?? 0)-\(ab)"
-        var extras: [String] = []
-        if let v = b.doubles, v > 0 { extras.append(v > 1 ? "\(v) 2B" : "2B") }
-        if let v = b.triples, v > 0 { extras.append(v > 1 ? "\(v) 3B" : "3B") }
-        if let v = b.homeRuns, v > 0 { extras.append(v > 1 ? "\(v) HR" : "HR") }
-        if let v = b.rbi, v > 0 { extras.append("\(v) RBI") }
-        if let v = b.runs, v > 0 { extras.append("\(v) R") }
-        if let v = b.baseOnBalls, v > 0 { extras.append(v > 1 ? "\(v) BB" : "BB") }
-        if let v = b.stolenBases, v > 0 { extras.append(v > 1 ? "\(v) SB" : "SB") }
-        if !extras.isEmpty { line += " · " + extras.joined(separator: ", ") }
-        return line
-    }
-
-    private static func formatPitchingLine(_ pitching: FeedPitchingStats?) -> String? {
-        guard let p = pitching, let ip = p.inningsPitched, ip != "0.0" else { return nil }
-        var parts = ["\(ip) IP"]
-        if let k = p.strikeOuts, k > 0 { parts.append("\(k)K") }
-        if let er = p.earnedRuns { parts.append("\(er)ER") }
-        if let np = p.numberOfPitches, np > 0 { parts.append("\(np)P") }
-        return parts.joined(separator: ", ")
     }
 
     // MARK: - Formatting
@@ -264,41 +240,90 @@ enum DiffPatchResult {
 
 // MARK: - Public Live Feed Model
 
-struct LiveFeedData: Sendable {
-    let gameState: String // "Preview", "Live", "Final"
-    let detailedState: String? // "Pre-Game", "Warmup", "In Progress", etc.
-    let currentBatterID: Int?
-    let currentBatterName: String?
-    let currentPitcherID: Int?
-    let currentPitcherName: String?
-    let inning: Int?
-    let inningHalf: String?
-    let inningState: String?
-    let homeScore: Int
-    let awayScore: Int
-    let homeTeam: String
-    let awayTeam: String
-    let homeTeamID: Int
-    let awayTeamID: Int
-    let balls: Int
-    let strikes: Int
-    let outs: Int
-    let runnerOnFirst: Int?
-    let runnerOnSecond: Int?
-    let runnerOnThird: Int?
-    let isPlayComplete: Bool
-    let lastPlayEvent: String?
-    let lastPlayDescription: String?
-    let homeBattingOrder: [Int]
-    let awayBattingOrder: [Int]
-    let homePitchers: [Int]
-    let awayPitchers: [Int]
-    let playerStats: [Int: PlayerGameStats]
+struct LiveFeedData: Sendable, Equatable {
+    var timeStamp: String?             // from /metaData/timeStamp - used as diffPatch startTimecode
+    var gameState: String              // "Preview", "Live", "Final"
+    var detailedState: String?         // "Pre-Game", "Warmup", "In Progress", etc.
+    var currentBatterID: Int?
+    var currentBatterName: String?
+    var currentPitcherID: Int?
+    var currentPitcherName: String?
+    var inning: Int?
+    var inningHalf: String?
+    var inningState: String?
+    var homeScore: Int
+    var awayScore: Int
+    var homeTeam: String
+    var awayTeam: String
+    var homeTeamID: Int
+    var awayTeamID: Int
+    var balls: Int
+    var strikes: Int
+    var outs: Int
+    var runnerOnFirst: Int?
+    var runnerOnSecond: Int?
+    var runnerOnThird: Int?
+    var isPlayComplete: Bool
+    var lastPlayEvent: String?
+    var lastPlayDescription: String?
+    var homeBattingOrder: [Int]
+    var awayBattingOrder: [Int]
+    var homePitchers: [Int]
+    var awayPitchers: [Int]
+    var playerStats: [Int: PlayerGameStats]
 }
 
-struct PlayerGameStats: Sendable {
-    let battingLine: String?
-    let pitchingLine: String?
+struct PlayerGameStats: Sendable, Equatable, Codable {
+    var batting: PlayerBattingStats? = nil
+    var pitching: PlayerPitchingStats? = nil
+}
+
+struct PlayerBattingStats: Sendable, Equatable, Codable {
+    var atBats: Int? = nil
+    var hits: Int? = nil
+    var runs: Int? = nil
+    var doubles: Int? = nil
+    var triples: Int? = nil
+    var homeRuns: Int? = nil
+    var rbi: Int? = nil
+    var baseOnBalls: Int? = nil
+    var strikeOuts: Int? = nil
+    var stolenBases: Int? = nil
+
+    var formatted: String? {
+        guard let ab = atBats else { return nil }
+        let hasActivity = ab > 0 || (baseOnBalls ?? 0) > 0 || (stolenBases ?? 0) > 0
+        guard hasActivity else { return nil }
+        var line = "\(hits ?? 0)-\(ab)"
+        var extras: [String] = []
+        if let v = doubles, v > 0 { extras.append(v > 1 ? "\(v) 2B" : "2B") }
+        if let v = triples, v > 0 { extras.append(v > 1 ? "\(v) 3B" : "3B") }
+        if let v = homeRuns, v > 0 { extras.append(v > 1 ? "\(v) HR" : "HR") }
+        if let v = rbi, v > 0 { extras.append("\(v) RBI") }
+        if let v = runs, v > 0 { extras.append("\(v) R") }
+        if let v = baseOnBalls, v > 0 { extras.append(v > 1 ? "\(v) BB" : "BB") }
+        if let v = stolenBases, v > 0 { extras.append(v > 1 ? "\(v) SB" : "SB") }
+        if !extras.isEmpty { line += " · " + extras.joined(separator: ", ") }
+        return line
+    }
+}
+
+struct PlayerPitchingStats: Sendable, Equatable, Codable {
+    var inningsPitched: String? = nil
+    var hits: Int? = nil
+    var earnedRuns: Int? = nil
+    var strikeOuts: Int? = nil
+    var baseOnBalls: Int? = nil
+    var numberOfPitches: Int? = nil
+
+    var formatted: String? {
+        guard let ip = inningsPitched, ip != "0.0" else { return nil }
+        var parts = ["\(ip) IP"]
+        if let k = strikeOuts, k > 0 { parts.append("\(k)K") }
+        if let er = earnedRuns { parts.append("\(er)ER") }
+        if let np = numberOfPitches, np > 0 { parts.append("\(np)P") }
+        return parts.joined(separator: ", ")
+    }
 }
 
 // MARK: - Private Codable Types (JSON Parsing Only)
@@ -434,30 +459,8 @@ private struct FeedBoxscorePlayer: Codable {
 }
 
 private struct FeedBoxscorePlayerStats: Codable {
-    let batting: FeedBattingStats?
-    let pitching: FeedPitchingStats?
-}
-
-private struct FeedBattingStats: Codable {
-    let atBats: Int?
-    let hits: Int?
-    let runs: Int?
-    let doubles: Int?
-    let triples: Int?
-    let homeRuns: Int?
-    let rbi: Int?
-    let baseOnBalls: Int?
-    let strikeOuts: Int?
-    let stolenBases: Int?
-}
-
-private struct FeedPitchingStats: Codable {
-    let inningsPitched: String?
-    let hits: Int?
-    let earnedRuns: Int?
-    let strikeOuts: Int?
-    let baseOnBalls: Int?
-    let numberOfPitches: Int?
+    let batting: PlayerBattingStats?
+    let pitching: PlayerPitchingStats?
 }
 
 private struct FeedPlays: Codable {

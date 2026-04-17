@@ -1,5 +1,8 @@
 import AppKit
+import os
 import UserNotifications
+
+private let log = Logger(subsystem: "dev.bjc.onDeck", category: "Notifications")
 
 // Stateless delegate - no mutable properties, so @unchecked is safe.
 // NSObject doesn't conform to Sendable on its own in Swift 6.
@@ -62,10 +65,10 @@ final class NotificationManager: Sendable {
         do {
             let granted = try await UNUserNotificationCenter.current()
                 .requestAuthorization(options: [.alert, .sound, .badge])
-            print("[Notifications] Permission granted: \(granted)")
+            log.info("[Notifications] Permission granted: \(granted, privacy: .public)")
             return granted
         } catch {
-            print("[Notifications] Permission error: \(error)")
+            log.error("[Notifications] Permission error: \(error, privacy: .public)")
             return false
         }
     }
@@ -73,7 +76,7 @@ final class NotificationManager: Sendable {
     func send(title: String, body: String, identifier: String? = nil, playerID: Int? = nil, clickURL: URL? = nil, autoDismissAfter: TimeInterval? = nil) async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         guard settings.authorizationStatus == .authorized else {
-            print("[Notifications] Not authorized (status: \(settings.authorizationStatus.rawValue))")
+            log.error("[Notifications] Not authorized (status: \(settings.authorizationStatus.rawValue))")
             return
         }
 
@@ -95,12 +98,12 @@ final class NotificationManager: Sendable {
 
         do {
             try await UNUserNotificationCenter.current().add(request)
-            print("[Notifications] Sent: \(title) - \(body)")
+            log.debug("[Notifications] Sent: \(title, privacy: .public) - \(body, privacy: .public)")
             if let autoDismissAfter {
                 await dismissalBag.schedule(id: id, delay: autoDismissAfter)
             }
         } catch {
-            print("[Notifications] Failed to send: \(error)")
+            log.error("[Notifications] Failed to send: \(error, privacy: .public)")
         }
     }
 
@@ -111,7 +114,7 @@ final class NotificationManager: Sendable {
         let ids = delivered.map(\.request.identifier).filter { $0.hasPrefix(prefix) }
         guard !ids.isEmpty else { return }
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ids)
-        print("[Notifications] Purged \(ids.count) not-in-lineup notifications for game \(gamePk)")
+        log.debug("[Notifications] Purged \(ids.count) not-in-lineup notifications for game \(gamePk)")
     }
 
     /// Removes all delivered and pending notifications and cancels auto-dismiss timers.
@@ -120,7 +123,7 @@ final class NotificationManager: Sendable {
         center.removeAllDeliveredNotifications()
         center.removeAllPendingNotificationRequests()
         await dismissalBag.cancelAll()
-        print("[Notifications] Purged all notifications (day rollover)")
+        log.info("[Notifications] Purged all notifications (day rollover)")
     }
 
     func purgeBatting(gamePk: Int, playerID: Int) {
@@ -128,7 +131,7 @@ final class NotificationManager: Sendable {
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: [id])
         center.removeDeliveredNotifications(withIdentifiers: [id])
-        print("[Notifications] Purge: \(id)")
+        log.debug("[Notifications] Purge: \(id, privacy: .public)")
     }
 
     func purgePitching(gamePk: Int, playerID: Int) {
@@ -136,7 +139,7 @@ final class NotificationManager: Sendable {
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: [id])
         center.removeDeliveredNotifications(withIdentifiers: [id])
-        print("[Notifications] Purge: \(id)")
+        log.debug("[Notifications] Purge: \(id, privacy: .public)")
     }
 
     // MARK: - Typed Notifications

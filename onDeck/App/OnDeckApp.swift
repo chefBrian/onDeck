@@ -4,6 +4,12 @@ import SwiftUI
 struct OnDeckApp: App {
     @State private var appState = AppState()
 
+    init() {
+        #if DEBUG
+        LiveFeedPatcherTests.runAll()
+        #endif
+    }
+
     var body: some Scene {
         MenuBarExtra {
             MenuBarView(appState: appState)

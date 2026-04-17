@@ -416,9 +416,9 @@ private struct LivePlayerRow: View {
         if !isInLineup { return "Not in Lineup" }
         guard let feed = appState.gameMonitor.latestFeeds[gamePk] else { return nil }
         if player.isPitcher && !player.isHitter {
-            return feed.playerStats[player.id]?.pitchingLine
+            return feed.playerStats[player.id]?.pitching?.formatted
         }
-        let batting = feed.playerStats[player.id]?.battingLine
+        let batting = feed.playerStats[player.id]?.batting?.formatted
         let prefix: String? = switch proximity {
         case .atBat, nil: nil
         case .onDeck: "On Deck"
@@ -556,9 +556,9 @@ private struct DonePlayerRow: View {
         guard let feed = appState.gameMonitor.latestFeeds[gamePk],
               let stats = feed.playerStats[player.id] else { return nil }
         if player.isPitcher && !player.isHitter {
-            return stats.pitchingLine
+            return stats.pitching?.formatted
         }
-        return stats.battingLine
+        return stats.batting?.formatted
     }
 }
 
@@ -739,6 +739,10 @@ struct FooterButtons: View {
         HStack(spacing: 0) {
             footerButton(systemIcon: "gear", label: "Settings") {
                 dismissMenu()
+                // The activation-policy flip is load-bearing: it lets macOS unload the
+                // Settings window infrastructure when SettingsView.onDisappear flips
+                // back to .accessory. Without it the ~230 MB spike from openSettings()
+                // sits resident until the OS decides to release on its own schedule.
                 NSApp.setActivationPolicy(.regular)
                 NSApp.activate()
                 openSettings()
