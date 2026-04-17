@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+private let log = Logger(subsystem: "dev.bjc.onDeck", category: "GameMonitor")
 
 @Observable
 @MainActor
@@ -61,14 +64,14 @@ final class GameMonitor {
         monitoredGames = Dictionary(uniqueKeysWithValues: games.map { ($0.id, $0) })
         isMonitoring = true
 
-        print("[GameMonitor] Starting monitoring for \(games.count) games")
-        print("[GameMonitor] Watching \(rosterPlayerIDs.count) roster player IDs: \(rosterPlayerIDs.sorted())")
+        log.info("[GameMonitor] Starting monitoring for \(games.count) games")
+        log.debug("[GameMonitor] Watching \(self.rosterPlayerIDs.count) roster player IDs: \(self.rosterPlayerIDs.sorted(), privacy: .public)")
         for player in players {
-            print("[GameMonitor]   \(player.id) = \(player.name) (\(player.team))")
+            log.debug("[GameMonitor]   \(player.id) = \(player.name, privacy: .public) (\(player.team, privacy: .public))")
         }
 
         for game in games {
-            print("[GameMonitor] Monitoring game \(game.id): \(game.awayTeam) @ \(game.homeTeam)")
+            log.info("[GameMonitor] Monitoring game \(game.id): \(game.awayTeam, privacy: .public) @ \(game.homeTeam, privacy: .public)")
         }
 
         coordinatorTask = Task { [weak self] in
@@ -109,7 +112,7 @@ final class GameMonitor {
         for key in latestFeeds.keys {
             latestFeeds[key]?.timeStamp = nil
         }
-        print("[GameMonitor] Timecodes invalidated (stale - next poll does full fetch per game)")
+        log.info("[GameMonitor] Timecodes invalidated (stale - next poll does full fetch per game)")
     }
 
     /// Stops monitoring a specific game (e.g., when no roster players remain).
@@ -137,7 +140,7 @@ final class GameMonitor {
         while !Task.isCancelled {
             let sleepDuration = nextEventDelay()
             if sleepDuration > 0 {
-                print("[GameMonitor] Sleeping \(Int(sleepDuration))s until next event")
+                log.debug("[GameMonitor] Sleeping \(Int(sleepDuration))s until next event")
                 do {
                     try await Task.sleep(for: .seconds(sleepDuration), tolerance: .seconds(sleepDuration > 60 ? 30 : 2))
                 } catch {
@@ -181,7 +184,7 @@ final class GameMonitor {
                    !(completedMilestones[gamePk]?.contains(milestone) ?? false) {
                     completedMilestones[gamePk, default: []].insert(milestone)
                     gamesToPoll.insert(gamePk)
-                    print("[GameMonitor] Pre-game lineup check for game \(gamePk) (\(Int(milestone / 60))min milestone)")
+                    log.info("[GameMonitor] Pre-game lineup check for game \(gamePk) (\(Int(milestone / 60))min milestone)")
                     break
                 }
             }
@@ -236,7 +239,7 @@ final class GameMonitor {
                 let playerIDsInGame = rosterPlayerIDs.filter { id in
                     isPlayerInGame(playerID: id, game: game)
                 }
-                print("[GameMonitor] Game \(gamePk) is Final - marking done: \(playerIDsInGame)")
+                log.notice("[GameMonitor] Game \(gamePk) is Final - marking done: \(playerIDsInGame, privacy: .public)")
                 stateManager?.setGameOver(playerIDs: Array(playerIDsInGame), gamePk: gamePk)
                 stopMonitoring(gamePk: gamePk)
             }
@@ -244,7 +247,7 @@ final class GameMonitor {
             // Transient error - preserve last-known feed for UI continuity, but
             // null its timeStamp so the next cycle does a full fetch.
             latestFeeds[gamePk]?.timeStamp = nil
-            print("[GameMonitor] Error for game \(gamePk): \(error) - will full-fetch next cycle")
+            log.error("[GameMonitor] Error for game \(gamePk): \(error, privacy: .public) - will full-fetch next cycle")
         }
     }
 
@@ -274,7 +277,7 @@ final class GameMonitor {
         }
 
         guard feed.gameState == "Live", feed.detailedState == "In Progress" else {
-            print("[GameMonitor] Game \(gamePk) state: \(feed.gameState)/\(feed.detailedState ?? "nil") (skipping)")
+            log.debug("[GameMonitor] Game \(gamePk) state: \(feed.gameState, privacy: .public)/\(feed.detailedState ?? "nil", privacy: .public) (skipping)")
             return
         }
 
@@ -325,13 +328,13 @@ final class GameMonitor {
             if let batterID = feed.currentBatterID {
                 if let player = rosterPlayers[batterID], player.isHitter {
                     let isNew = lastBatterID[gamePk] != batterID
-                    print("[GameMonitor] >>> ROSTER BATTER: \(feed.currentBatterName ?? "?") (ID \(batterID)) - \(isNew ? "NEW" : "same") - \(inning)")
+                    log.info("[GameMonitor] >>> ROSTER BATTER: \(feed.currentBatterName ?? "?", privacy: .public) (ID \(batterID)) - \(isNew ? "NEW" : "same", privacy: .public) - \(inning, privacy: .public)")
                     stateManager?.update(playerID: batterID, state: .active(makeContext(role: .batting)))
                 } else if lastBatterID[gamePk] != batterID {
                     if rosterPlayerIDs.contains(batterID) {
-                        print("[GameMonitor] Batter \(feed.currentBatterName ?? "?") (ID \(batterID)) on roster as pitcher-only, skipping")
+                        log.debug("[GameMonitor] Batter \(feed.currentBatterName ?? "?", privacy: .public) (ID \(batterID)) on roster as pitcher-only, skipping")
                     } else {
-                        print("[GameMonitor] Batter \(feed.currentBatterName ?? "?") (ID \(batterID)) not on roster")
+                        log.debug("[GameMonitor] Batter \(feed.currentBatterName ?? "?", privacy: .public) (ID \(batterID)) not on roster")
                     }
                 }
             }
@@ -340,7 +343,7 @@ final class GameMonitor {
             if let pitcherID = feed.currentPitcherID {
                 if let player = rosterPlayers[pitcherID], player.isPitcher {
                     let isNew = lastPitcherID[gamePk] != pitcherID
-                    print("[GameMonitor] >>> ROSTER PITCHER: \(feed.currentPitcherName ?? "?") (ID \(pitcherID)) - \(isNew ? "NEW" : "same") - \(inning)")
+                    log.info("[GameMonitor] >>> ROSTER PITCHER: \(feed.currentPitcherName ?? "?", privacy: .public) (ID \(pitcherID)) - \(isNew ? "NEW" : "same", privacy: .public) - \(inning, privacy: .public)")
                     stateManager?.update(playerID: pitcherID, state: .active(makeContext(role: .pitching)))
                 }
             }

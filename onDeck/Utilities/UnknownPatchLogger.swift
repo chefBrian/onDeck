@@ -25,6 +25,7 @@ final class UnknownPatchLogger: @unchecked Sendable {
     }
 
     func record(op: String, path: String, from: String?, value: Any?) {
+        #if DEBUG
         let key = "\(op)|\(path)"
 
         lock.lock()
@@ -46,6 +47,7 @@ final class UnknownPatchLogger: @unchecked Sendable {
         ensureFileInitialized()
         rotateIfNeeded()
         append(row)
+        #endif
     }
 
     private func ensureFileInitialized() {
@@ -71,7 +73,7 @@ final class UnknownPatchLogger: @unchecked Sendable {
         guard let data = text.data(using: .utf8) else { return }
         if let handle = try? FileHandle(forWritingTo: fileURL) {
             defer { try? handle.close() }
-            try? handle.seekToEnd()
+            _ = try? handle.seekToEnd()
             try? handle.write(contentsOf: data)
         }
     }

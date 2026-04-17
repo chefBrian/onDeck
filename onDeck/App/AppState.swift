@@ -1,4 +1,7 @@
+import os
 import SwiftUI
+
+private let log = Logger(subsystem: "dev.bjc.onDeck", category: "AppState")
 
 @Observable
 @MainActor
@@ -255,7 +258,7 @@ final class AppState {
             let matchup = "\(game.awayTeam) @ \(game.homeTeam)"
             let fantraxURL = rosterURL.isEmpty ? nil : URL(string: rosterURL)
 
-            print("[Notification] NOT IN LINEUP: \(player.name) - \(matchup)")
+            log.info("[Notification] NOT IN LINEUP: \(player.name, privacy: .public) - \(matchup, privacy: .public)")
             await notificationManager.notifyNotInLineup(
                 playerName: player.name,
                 playerID: player.id,
@@ -392,7 +395,7 @@ final class AppState {
         guard let player = rosterManager.players.first(where: { $0.id == playerID }) else { return }
         if player.isUnavailable { return }
         if hideBenchPlayers && player.isOnBench { return }
-        print("[Transition] \(player.name) (\(playerID)): \(String(describing: oldState)) -> \(String(describing: newState))")
+        log.debug("[Transition] \(player.name, privacy: .public) (\(playerID)): \(String(describing: oldState), privacy: .public) -> \(String(describing: newState), privacy: .public)")
 
         switch (oldState, newState) {
         case (_, .active(let context)):
@@ -404,7 +407,7 @@ final class AppState {
                 let streamURL = streamURL(for: context.gamePk)
                 switch context.role {
                 case .pitching:
-                    print("[Notification] PITCHING: \(player.name) - \(gameString), \(context.inning)")
+                    log.info("[Notification] PITCHING: \(player.name, privacy: .public) - \(gameString, privacy: .public), \(context.inning, privacy: .public)")
                     await notificationManager.notifyPitching(
                         playerName: player.name,
                         playerID: player.id,
@@ -415,11 +418,11 @@ final class AppState {
                     )
                     // Race guard: state may have changed during the async send
                     if !isStillActive(playerID: playerID, role: .pitching) {
-                        print("[Notification] RACE GUARD purge pitching: \(player.name) (state changed during send)")
+                        log.notice("[Notification] RACE GUARD purge pitching: \(player.name, privacy: .public) (state changed during send)")
                         notificationManager.purgePitching(gamePk: context.gamePk, playerID: playerID)
                     }
                 case .batting:
-                    print("[Notification] BATTING: \(player.name) - \(gameString), \(context.inning)")
+                    log.info("[Notification] BATTING: \(player.name, privacy: .public) - \(gameString, privacy: .public), \(context.inning, privacy: .public)")
                     await notificationManager.notifyBatting(
                         playerName: player.name,
                         playerID: player.id,
@@ -430,7 +433,7 @@ final class AppState {
                     )
                     // Race guard: state may have changed during the async send
                     if !isStillActive(playerID: playerID, role: .batting) {
-                        print("[Notification] RACE GUARD purge batting: \(player.name) (state changed during send)")
+                        log.notice("[Notification] RACE GUARD purge batting: \(player.name, privacy: .public) (state changed during send)")
                         notificationManager.purgeBatting(gamePk: context.gamePk, playerID: playerID)
                     }
                 }
@@ -496,18 +499,18 @@ final class AppState {
 
         // If already past the refresh window, skip - monitoring is already running
         if delay <= 0 {
-            print("[AppState] Pre-game refresh: skipping (first game at \(earliestStart) already started)")
+            log.info("[AppState] Pre-game refresh: skipping (first game at \(earliestStart, privacy: .public) already started)")
             return
         }
 
-        print("[AppState] Pre-game refresh scheduled for \(refreshTime) (15 min before \(earliestStart))")
+        log.info("[AppState] Pre-game refresh scheduled for \(refreshTime, privacy: .public) (15 min before \(earliestStart, privacy: .public))")
         preGameRefreshTask = Task { [weak self] in
             do {
                 try await Task.sleep(for: .seconds(delay), tolerance: .seconds(60))
             } catch {
                 return // Task cancelled
             }
-            print("[AppState] Pre-game refresh firing")
+            log.info("[AppState] Pre-game refresh firing")
             await self?.resyncRoster()
         }
     }
@@ -515,33 +518,34 @@ final class AppState {
     // MARK: - Sleep/Wake & Unlock Recovery
 
     private func setupSystemResumeHandler() {
-        print("[AppState] Registering system resume observers")
+        log.info("[AppState] Registering system resume observers")
         let center = NSWorkspace.shared.notificationCenter
-        let handler: (Notification) -> Void = { [weak self] notification in
-            guard let self else { return }
-            print("[AppState] System resume: \(notification.name.rawValue)")
-            Task { @MainActor in
+        let handler: @Sendable (Notification) -> Void = { [weak self] notification in
+            let name = notification.name.rawValue
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                log.notice("[AppState] System resume: \(name, privacy: .public)")
                 await self.handleSystemResume()
             }
         }
         center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main, using: handler)
         center.addObserver(forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: .main, using: handler)
         DistributedNotificationCenter.default().addObserver(forName: NSNotification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main, using: handler)
-        print("[AppState] System resume observers registered (wake, session, screen unlock)")
+        log.info("[AppState] System resume observers registered (wake, session, screen unlock)")
     }
 
     private func handleSystemResume() async {
         // Debounce: skip if recovery ran within the last 30 seconds
         let now = Date()
         guard now.timeIntervalSince(lastResumeTime) > 30 else {
-            print("[AppState] Resume debounced (already recovered recently)")
+            log.debug("[AppState] Resume debounced (already recovered recently)")
             return
         }
         lastResumeTime = now
 
         guard !rosterURL.isEmpty, effectiveTeamID != nil else { return }
 
-        print("[AppState] Recovering from system resume - clearing caches and resyncing")
+        log.notice("[AppState] Recovering from system resume - clearing caches and resyncing")
         gameMonitor.invalidateTimecodes()
         MemoryPressureRelief.releaseReclaimablePages()
         await resyncRoster()

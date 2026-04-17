@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+private let log = Logger(subsystem: "dev.bjc.onDeck", category: "MLB API")
 
 struct MLBStatsAPI: Sendable {
 
@@ -8,7 +11,7 @@ struct MLBStatsAPI: Sendable {
         let cleanName = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? name
         let url = URL(string: "https://statsapi.mlb.com/api/v1/people/search?names=\(cleanName)&hydrate=currentTeam")!
         let (data, _) = try await URLSession.shared.data(from: url)
-        print("[MLB API] GET /people/search name=\(name) \(Self.formatBytes(data.count))")
+        log.debug("[MLB API] GET /people/search name=\(name, privacy: .public) \(Self.formatBytes(data.count), privacy: .public)")
         let response = try JSONDecoder().decode(SearchResponse.self, from: data)
 
         guard let people = response.people, !people.isEmpty else { return nil }
@@ -35,7 +38,7 @@ struct MLBStatsAPI: Sendable {
         let dateString = Self.dateFormatter.string(from: date)
         let url = URL(string: "https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=\(dateString)&hydrate=team,broadcasts,probablePitcher,lineups")!
         let (data, _) = try await URLSession.shared.data(from: url)
-        print("[MLB API] GET /schedule date=\(dateString) \(Self.formatBytes(data.count))")
+        log.debug("[MLB API] GET /schedule date=\(dateString, privacy: .public) \(Self.formatBytes(data.count), privacy: .public)")
         let response = try JSONDecoder().decode(ScheduleResponse.self, from: data)
 
         return response.dates?.flatMap { date in
@@ -72,7 +75,7 @@ struct MLBStatsAPI: Sendable {
         let url = URL(string: "https://statsapi.mlb.com/api/v1.1/game/\(gamePk)/feed/live")!
         let (data, _) = try await URLSession.shared.data(from: url)
         let tag = label.map { " \($0)" } ?? ""
-        print("[MLB API] GET /feed/live game=\(gamePk)\(tag) \(Self.formatBytes(data.count))")
+        log.debug("[MLB API] GET /feed/live game=\(gamePk)\(tag, privacy: .public) \(Self.formatBytes(data.count), privacy: .public)")
         return try Self.decodeLiveFeed(from: data)
     }
 
@@ -95,17 +98,17 @@ struct MLBStatsAPI: Sendable {
 
         // API sometimes returns a single feed object (dict) instead of an array
         if parsed is [String: Any] {
-            print("[MLB API] GET /diffPatch game=\(gamePk)\(tag) \(Self.formatBytes(data.count)) full update")
+            log.debug("[MLB API] GET /diffPatch game=\(gamePk)\(tag, privacy: .public) \(Self.formatBytes(data.count), privacy: .public) full update")
             return .fullUpdate(data)
         }
 
         guard let array = parsed as? [[String: Any]] else {
-            print("[MLB API] GET /diffPatch game=\(gamePk)\(tag) \(Self.formatBytes(data.count)) (unparseable)")
+            log.debug("[MLB API] GET /diffPatch game=\(gamePk)\(tag, privacy: .public) \(Self.formatBytes(data.count), privacy: .public) (unparseable)")
             return .fullUpdate(data)
         }
 
         if array.isEmpty {
-            print("[MLB API] GET /diffPatch game=\(gamePk)\(tag) \(Self.formatBytes(data.count)) no changes")
+            log.debug("[MLB API] GET /diffPatch game=\(gamePk)\(tag, privacy: .public) \(Self.formatBytes(data.count), privacy: .public) no changes")
             return .noChanges
         }
 
@@ -117,12 +120,12 @@ struct MLBStatsAPI: Sendable {
             } else {
                 // API returned a full feed object instead of patches - serialize it back
                 let entryData = try JSONSerialization.data(withJSONObject: entry)
-                print("[MLB API] GET /diffPatch game=\(gamePk)\(tag) \(Self.formatBytes(data.count)) full update")
+                log.debug("[MLB API] GET /diffPatch game=\(gamePk)\(tag, privacy: .public) \(Self.formatBytes(data.count), privacy: .public) full update")
                 return .fullUpdate(entryData)
             }
         }
 
-        print("[MLB API] GET /diffPatch game=\(gamePk)\(tag) \(Self.formatBytes(data.count)) \(allPatches.count) ops")
+        log.debug("[MLB API] GET /diffPatch game=\(gamePk)\(tag, privacy: .public) \(Self.formatBytes(data.count), privacy: .public) \(allPatches.count) ops")
         return .patches(allPatches)
     }
 
@@ -184,7 +187,7 @@ struct MLBStatsAPI: Sendable {
         let encoded = timestamp.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? timestamp
         let url = URL(string: "https://statsapi.mlb.com/api/v1/game/changes?updatedSince=\(encoded)&sportId=1")!
         let (data, _) = try await URLSession.shared.data(from: url)
-        print("[MLB API] GET /game/changes \(Self.formatBytes(data.count))")
+        log.debug("[MLB API] GET /game/changes \(Self.formatBytes(data.count), privacy: .public)")
         let response = try JSONDecoder().decode(GameChangesResponse.self, from: data)
         let gamePks = response.dates?.flatMap { $0.games.map(\.gamePk) } ?? []
         return Set(gamePks)
