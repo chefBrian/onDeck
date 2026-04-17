@@ -17,7 +17,14 @@ final class MemoryStats {
     private var pollTask: Task<Void, Never>?
 
     func start() {
-        // Stub - implemented in Task 4.
+        guard pollTask == nil else { return }
+        sample()
+        pollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                self?.sample()
+            }
+        }
     }
 
     func sample() {

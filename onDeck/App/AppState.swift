@@ -20,6 +20,9 @@ final class AppState {
     let stateManager = StateManager()
     private let notificationManager = NotificationManager.shared
     private let fantraxAPI = FantraxAPI()
+    #if DEBUG
+    let memoryStats = MemoryStats()
+    #endif
 
     // Sync state
     var isSyncing = false
@@ -91,6 +94,9 @@ final class AppState {
         setupLineupUpdateHandler()
         setupGameStartHandler()
         setupSystemResumeHandler()
+        #if DEBUG
+        memoryStats.start()
+        #endif
         Task {
             await start()
             if alwaysOpenPopout && !FloatingPanel.shared.isShowing {
