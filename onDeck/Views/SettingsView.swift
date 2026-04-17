@@ -3,10 +3,6 @@ import SwiftUI
 #if DEBUG
 import os.log
 
-/// Phase-1 toggle - set to `false` to measure Settings open/close with the
-/// activation-policy flip disabled. Default `true` matches current behavior.
-let SETTINGS_FLIP_ACTIVATION_POLICY = true
-
 private let memoryLogger = Logger(subsystem: "dev.bjc.onDeck", category: "memory")
 
 /// Counts legitimate Settings open events, ignoring spurious SwiftUI `.onAppear`
@@ -28,8 +24,6 @@ private actor SettingsCycleCounter {
         isOpen = false
     }
 }
-#else
-let SETTINGS_FLIP_ACTIVATION_POLICY = true
 #endif
 
 struct SettingsView: View {
@@ -161,20 +155,12 @@ struct SettingsView: View {
         memoryLogger.notice("settings \(tag, privacy: .public) onAppear entry: \(t0, privacy: .public)MB")
         #endif
 
-        if SETTINGS_FLIP_ACTIVATION_POLICY {
-            NSApplication.shared.setActivationPolicy(.regular)
-        }
+        NSApplication.shared.setActivationPolicy(.regular)
 
         #if DEBUG
-        let t1 = MemoryPressureRelief.currentFootprintMB()
-        if SETTINGS_FLIP_ACTIVATION_POLICY {
-            memoryLogger.notice("settings \(tag, privacy: .public) after flip to .regular: \(t1, privacy: .public)MB (\(t1 - t0, privacy: .public)MB delta)")
-        } else {
-            memoryLogger.notice("settings \(tag, privacy: .public) flip disabled (condition A): \(t1, privacy: .public)MB")
-        }
         try? await Task.sleep(for: .milliseconds(500))
-        let t2 = MemoryPressureRelief.currentFootprintMB()
-        memoryLogger.notice("settings \(tag, privacy: .public) 500ms post-render: \(t2, privacy: .public)MB (\(t2 - t1, privacy: .public)MB from flip)")
+        let t1 = MemoryPressureRelief.currentFootprintMB()
+        memoryLogger.notice("settings \(tag, privacy: .public) 500ms post-render: \(t1, privacy: .public)MB (\(t1 - t0, privacy: .public)MB delta)")
         #endif
     }
 
@@ -182,28 +168,18 @@ struct SettingsView: View {
     private func handleOnDisappear() async {
         #if DEBUG
         await SettingsCycleCounter.shared.recordClose()
-
         let t0 = MemoryPressureRelief.currentFootprintMB()
         memoryLogger.notice("settings onDisappear entry: \(t0, privacy: .public)MB")
         #endif
 
-        if SETTINGS_FLIP_ACTIVATION_POLICY {
-            NSApplication.shared.setActivationPolicy(.accessory)
-        }
+        // The .accessory flip signals macOS to unload the Settings window
+        // infrastructure, releasing ~230 MB within ~3s.
+        NSApplication.shared.setActivationPolicy(.accessory)
 
         #if DEBUG
-        let t1 = MemoryPressureRelief.currentFootprintMB()
-        if SETTINGS_FLIP_ACTIVATION_POLICY {
-            memoryLogger.notice("settings after flip to .accessory: \(t1, privacy: .public)MB (\(t1 - t0, privacy: .public)MB delta)")
-        }
         try? await Task.sleep(for: .seconds(3))
-        let t2 = MemoryPressureRelief.currentFootprintMB()
-        memoryLogger.notice("settings 3s post-close: \(t2, privacy: .public)MB (\(t2 - t1, privacy: .public)MB since flip)")
-
-        MemoryPressureRelief.releaseReclaimablePages(reason: "settings close")
-
-        let t3 = MemoryPressureRelief.currentFootprintMB()
-        memoryLogger.notice("settings post-relief: \(t3, privacy: .public)MB (cycle residual vs onDisappear entry: \(t3 - t0, privacy: .public)MB)")
+        let t1 = MemoryPressureRelief.currentFootprintMB()
+        memoryLogger.notice("settings 3s post-close: \(t1, privacy: .public)MB (\(t1 - t0, privacy: .public)MB delta)")
         #endif
     }
 }

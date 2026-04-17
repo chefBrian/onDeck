@@ -1,7 +1,4 @@
 import SwiftUI
-#if DEBUG
-import os.log
-#endif
 
 private enum BattingProximity {
     case atBat
@@ -742,19 +739,11 @@ struct FooterButtons: View {
         HStack(spacing: 0) {
             footerButton(systemIcon: "gear", label: "Settings") {
                 dismissMenu()
-                #if DEBUG
-                let beforeMB = MemoryPressureRelief.currentFootprintMB()
-                Logger(subsystem: "dev.bjc.onDeck", category: "memory")
-                    .notice("settings button tapped (pre-flip): \(beforeMB, privacy: .public)MB")
-                #endif
-                if SETTINGS_FLIP_ACTIVATION_POLICY {
-                    NSApp.setActivationPolicy(.regular)
-                }
-                #if DEBUG
-                let afterMB = MemoryPressureRelief.currentFootprintMB()
-                Logger(subsystem: "dev.bjc.onDeck", category: "memory")
-                    .notice("settings button tapped (post-flip): \(afterMB, privacy: .public)MB (\(afterMB - beforeMB, privacy: .public)MB delta)")
-                #endif
+                // The activation-policy flip is load-bearing: it lets macOS unload the
+                // Settings window infrastructure when SettingsView.onDisappear flips
+                // back to .accessory. Without it the ~230 MB spike from openSettings()
+                // sits resident until the OS decides to release on its own schedule.
+                NSApp.setActivationPolicy(.regular)
                 NSApp.activate()
                 openSettings()
             }
