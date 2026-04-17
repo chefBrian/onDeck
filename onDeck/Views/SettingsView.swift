@@ -1,5 +1,37 @@
 import SwiftUI
 
+#if DEBUG
+import os.log
+
+/// Phase-1 toggle - set to `false` to measure Settings open/close with the
+/// activation-policy flip disabled. Default `true` matches current behavior.
+private let SETTINGS_FLIP_ACTIVATION_POLICY = true
+
+private let memoryLogger = Logger(subsystem: "dev.bjc.onDeck", category: "memory")
+
+/// Counts legitimate Settings open events, ignoring spurious SwiftUI `.onAppear`
+/// re-fires (e.g. when a child sheet dismisses). Increments only on transitions
+/// from closed -> open; returns nil for re-fires so the caller can skip logging.
+private actor SettingsCycleCounter {
+    static let shared = SettingsCycleCounter()
+    private var count = 0
+    private var isOpen = false
+
+    func recordOpen() -> Int? {
+        if isOpen { return nil }
+        isOpen = true
+        count += 1
+        return count
+    }
+
+    func recordClose() {
+        isOpen = false
+    }
+}
+#else
+private let SETTINGS_FLIP_ACTIVATION_POLICY = true
+#endif
+
 struct SettingsView: View {
     @Bindable var appState: AppState
     @State private var notifyBatting = UserDefaults.standard.bool(forKey: "notifyBatting", default: true)
@@ -113,11 +145,64 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 450, height: 400)
         .onAppear {
-            NSApplication.shared.setActivationPolicy(.regular)
+            Task { await handleOnAppear() }
         }
         .onDisappear {
+            Task { await handleOnDisappear() }
+        }
+    }
+
+    private func handleOnAppear() async {
+        #if DEBUG
+        let cycle = await SettingsCycleCounter.shared.recordOpen()
+        let tag = cycle.map { "cycle \($0)" } ?? "spurious re-fire"
+        let t0 = MemoryPressureRelief.currentFootprintMB()
+        memoryLogger.notice("settings \(tag, privacy: .public) onAppear entry: \(t0, privacy: .public)MB")
+        #endif
+
+        if SETTINGS_FLIP_ACTIVATION_POLICY {
+            NSApplication.shared.setActivationPolicy(.regular)
+        }
+
+        #if DEBUG
+        let t1 = MemoryPressureRelief.currentFootprintMB()
+        if SETTINGS_FLIP_ACTIVATION_POLICY {
+            memoryLogger.notice("settings \(tag, privacy: .public) after flip to .regular: \(t1, privacy: .public)MB (\(t1 - t0, privacy: .public)MB delta)")
+        } else {
+            memoryLogger.notice("settings \(tag, privacy: .public) flip disabled (condition A): \(t1, privacy: .public)MB")
+        }
+        try? await Task.sleep(for: .milliseconds(500))
+        let t2 = MemoryPressureRelief.currentFootprintMB()
+        memoryLogger.notice("settings \(tag, privacy: .public) 500ms post-render: \(t2, privacy: .public)MB (\(t2 - t1, privacy: .public)MB from flip)")
+        #endif
+    }
+
+    private func handleOnDisappear() async {
+        #if DEBUG
+        let t0 = MemoryPressureRelief.currentFootprintMB()
+        memoryLogger.notice("settings onDisappear entry: \(t0, privacy: .public)MB")
+        #endif
+
+        if SETTINGS_FLIP_ACTIVATION_POLICY {
             NSApplication.shared.setActivationPolicy(.accessory)
         }
+
+        #if DEBUG
+        let t1 = MemoryPressureRelief.currentFootprintMB()
+        if SETTINGS_FLIP_ACTIVATION_POLICY {
+            memoryLogger.notice("settings after flip to .accessory: \(t1, privacy: .public)MB (\(t1 - t0, privacy: .public)MB delta)")
+        }
+        try? await Task.sleep(for: .seconds(3))
+        let t2 = MemoryPressureRelief.currentFootprintMB()
+        memoryLogger.notice("settings 3s post-close: \(t2, privacy: .public)MB (\(t2 - t1, privacy: .public)MB since flip)")
+
+        MemoryPressureRelief.releaseReclaimablePages(reason: "settings close")
+
+        let t3 = MemoryPressureRelief.currentFootprintMB()
+        memoryLogger.notice("settings post-relief: \(t3, privacy: .public)MB (cycle residual vs onDisappear entry: \(t3 - t0, privacy: .public)MB)")
+
+        await SettingsCycleCounter.shared.recordClose()
+        #endif
     }
 }
 
