@@ -76,6 +76,14 @@ struct MenuBarView: View {
             }
         }
         .frame(width: 300)
+        #if DEBUG
+        .overlay(alignment: .top) {
+            Text("\(appState.memoryStats.currentMB) / \(appState.memoryStats.maxMB) MB")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.top, 6)
+        }
+        #endif
     }
 }
 
