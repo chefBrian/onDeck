@@ -1,31 +1,5 @@
 import SwiftUI
 
-#if DEBUG
-import os.log
-
-private let memoryLogger = Logger(subsystem: "dev.bjc.onDeck", category: "memory")
-
-/// Counts legitimate Settings open events, ignoring spurious SwiftUI `.onAppear`
-/// re-fires (e.g. when a child sheet dismisses). Increments only on transitions
-/// from closed -> open; returns nil for re-fires so the caller can skip logging.
-private actor SettingsCycleCounter {
-    static let shared = SettingsCycleCounter()
-    private var count = 0
-    private var isOpen = false
-
-    func recordOpen() -> Int? {
-        if isOpen { return nil }
-        isOpen = true
-        count += 1
-        return count
-    }
-
-    func recordClose() {
-        isOpen = false
-    }
-}
-#endif
-
 struct SettingsView: View {
     @Bindable var appState: AppState
     @State private var notifyBatting = UserDefaults.standard.bool(forKey: "notifyBatting", default: true)
@@ -139,48 +113,13 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 450, height: 400)
         .onAppear {
-            Task { await handleOnAppear() }
+            NSApplication.shared.setActivationPolicy(.regular)
         }
         .onDisappear {
-            Task { await handleOnDisappear() }
+            // The .accessory flip signals macOS to unload the Settings window
+            // infrastructure, releasing ~230 MB within ~3s.
+            NSApplication.shared.setActivationPolicy(.accessory)
         }
-    }
-
-    @MainActor
-    private func handleOnAppear() async {
-        #if DEBUG
-        let cycle = await SettingsCycleCounter.shared.recordOpen()
-        let tag = cycle.map { "cycle \($0)" } ?? "spurious re-fire"
-        let t0 = MemoryPressureRelief.currentFootprintMB()
-        memoryLogger.notice("settings \(tag, privacy: .public) onAppear entry: \(t0, privacy: .public)MB")
-        #endif
-
-        NSApplication.shared.setActivationPolicy(.regular)
-
-        #if DEBUG
-        try? await Task.sleep(for: .milliseconds(500))
-        let t1 = MemoryPressureRelief.currentFootprintMB()
-        memoryLogger.notice("settings \(tag, privacy: .public) 500ms post-render: \(t1, privacy: .public)MB (\(t1 - t0, privacy: .public)MB delta)")
-        #endif
-    }
-
-    @MainActor
-    private func handleOnDisappear() async {
-        #if DEBUG
-        await SettingsCycleCounter.shared.recordClose()
-        let t0 = MemoryPressureRelief.currentFootprintMB()
-        memoryLogger.notice("settings onDisappear entry: \(t0, privacy: .public)MB")
-        #endif
-
-        // The .accessory flip signals macOS to unload the Settings window
-        // infrastructure, releasing ~230 MB within ~3s.
-        NSApplication.shared.setActivationPolicy(.accessory)
-
-        #if DEBUG
-        try? await Task.sleep(for: .seconds(3))
-        let t1 = MemoryPressureRelief.currentFootprintMB()
-        memoryLogger.notice("settings 3s post-close: \(t1, privacy: .public)MB (\(t1 - t0, privacy: .public)MB delta)")
-        #endif
     }
 }
 

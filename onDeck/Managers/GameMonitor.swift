@@ -97,7 +97,7 @@ final class GameMonitor {
         // startMonitoring() calls stopMonitoring() as part of its reset; skip the
         // pressure relief there since we're about to allocate for new work.
         if wasMonitoring {
-            MemoryPressureRelief.releaseReclaimablePages(reason: "full stop (day rollover)")
+            MemoryPressureRelief.releaseReclaimablePages()
         }
     }
 
@@ -127,7 +127,7 @@ final class GameMonitor {
             coordinatorTask?.cancel()
             coordinatorTask = nil
             isMonitoring = false
-            MemoryPressureRelief.releaseReclaimablePages(reason: "last game ended")
+            MemoryPressureRelief.releaseReclaimablePages()
         }
     }
 

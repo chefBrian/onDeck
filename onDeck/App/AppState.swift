@@ -543,7 +543,7 @@ final class AppState {
 
         print("[AppState] Recovering from system resume - clearing caches and resyncing")
         gameMonitor.invalidateTimecodes()
-        MemoryPressureRelief.releaseReclaimablePages(reason: "system wake")
+        MemoryPressureRelief.releaseReclaimablePages()
         await resyncRoster()
     }
 
