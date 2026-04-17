@@ -29,24 +29,26 @@ enum MemoryStatsTests {
                 : "maxBytes (\(stats.maxBytes)) != currentBytes (\(stats.currentBytes)) after single sample"
         }
 
-        test(&failures, "maxBytes is monotonic across samples") {
+        test(&failures, "applySample ratchets maxBytes and never regresses when bytes drops") {
             let stats = MemoryStats()
-            stats.sample()
-            let firstMax = stats.maxBytes
-            // Allocate and drop ~4 MB to nudge phys_footprint upward. The max
-            // must never regress regardless of whether the allocation stuck.
-            autoreleasepool {
-                _ = [UInt8](repeating: 0, count: 4 * 1_048_576)
+            stats.applySample(bytes: 100)
+            stats.applySample(bytes: 50)
+            guard stats.maxBytes == 100 else {
+                return "maxBytes regressed after lower sample: expected 100, got \(stats.maxBytes)"
             }
-            stats.sample()
-            return stats.maxBytes >= firstMax
+            guard stats.currentBytes == 50 else {
+                return "currentBytes should reflect latest sample: expected 50, got \(stats.currentBytes)"
+            }
+            stats.applySample(bytes: 150)
+            return stats.maxBytes == 150
                 ? nil
-                : "maxBytes regressed: \(firstMax) -> \(stats.maxBytes)"
+                : "maxBytes failed to advance on higher sample: expected 150, got \(stats.maxBytes)"
         }
 
         if !failures.isEmpty {
             preconditionFailure("MemoryStatsTests failures:\n - " + failures.joined(separator: "\n - "))
         }
+        print("[MemoryStatsTest] all tests passed")
     }
 
     private static func test(_ failures: inout [String], _ name: String, _ body: () -> String?) {

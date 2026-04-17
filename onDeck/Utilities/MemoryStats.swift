@@ -29,9 +29,16 @@ final class MemoryStats {
             }
         }
         guard kr == KERN_SUCCESS else { return }
-        let footprint = info.phys_footprint
-        currentBytes = footprint
-        if footprint > maxBytes { maxBytes = footprint }
+        applySample(bytes: info.phys_footprint)
+    }
+
+    /// Applies an observed footprint reading to `currentBytes` and ratchets
+    /// `maxBytes` upward. Split out from `sample()` so the ratchet can be
+    /// exercised deterministically in `MemoryStatsTests` without having to
+    /// predict how the kernel will report `phys_footprint` between calls.
+    func applySample(bytes: UInt64) {
+        currentBytes = bytes
+        if bytes > maxBytes { maxBytes = bytes }
     }
 
     var currentMB: Int { Int(currentBytes / 1_048_576) }
