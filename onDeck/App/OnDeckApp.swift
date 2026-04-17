@@ -7,6 +7,7 @@ struct OnDeckApp: App {
     init() {
         #if DEBUG
         LiveFeedPatcherTests.runAll()
+        MemoryStatsTests.runAll()
         #endif
     }
 

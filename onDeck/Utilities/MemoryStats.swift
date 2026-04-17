@@ -21,8 +21,17 @@ final class MemoryStats {
     }
 
     func sample() {
-        // Stub - implemented in Task 3. Intentionally no-op so the
-        // self-tests in MemoryStatsTests fail until real logic lands.
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let kr = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        guard kr == KERN_SUCCESS else { return }
+        let footprint = info.phys_footprint
+        currentBytes = footprint
+        if footprint > maxBytes { maxBytes = footprint }
     }
 
     var currentMB: Int { Int(currentBytes / 1_048_576) }
