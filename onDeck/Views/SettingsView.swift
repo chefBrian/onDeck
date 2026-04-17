@@ -5,7 +5,7 @@ import os.log
 
 /// Phase-1 toggle - set to `false` to measure Settings open/close with the
 /// activation-policy flip disabled. Default `true` matches current behavior.
-private let SETTINGS_FLIP_ACTIVATION_POLICY = true
+let SETTINGS_FLIP_ACTIVATION_POLICY = true
 
 private let memoryLogger = Logger(subsystem: "dev.bjc.onDeck", category: "memory")
 
@@ -29,7 +29,7 @@ private actor SettingsCycleCounter {
     }
 }
 #else
-private let SETTINGS_FLIP_ACTIVATION_POLICY = true
+let SETTINGS_FLIP_ACTIVATION_POLICY = true
 #endif
 
 struct SettingsView: View {

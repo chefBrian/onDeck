@@ -35,7 +35,8 @@ No DEBUG self-tests are added for this plan - instrumentation is the diagnostic 
 
 | Path | Change |
 |---|---|
-| `onDeck/Views/SettingsView.swift` | Add `SettingsCycleCounter` actor (`#if DEBUG`), `SETTINGS_FLIP_ACTIVATION_POLICY` constant, refactor `.onAppear` / `.onDisappear` into instrumented `handleOnAppear` / `handleOnDisappear` async methods. Phase 3 fix lands here too. |
+| `onDeck/Views/SettingsView.swift` | Add `SettingsCycleCounter` actor (`#if DEBUG`), `SETTINGS_FLIP_ACTIVATION_POLICY` constant (file-level `internal` so MenuBarView can reference it), refactor `.onAppear` / `.onDisappear` into instrumented `handleOnAppear` / `handleOnDisappear` async methods. Phase 3 fix lands here too. |
+| `onDeck/Views/MenuBarView.swift` | Gate the Settings footer button's `NSApp.setActivationPolicy(.regular)` call with `SETTINGS_FLIP_ACTIVATION_POLICY`, and add DEBUG pre/post-flip footprint logging. This is the REAL spike trigger - Task 2 measurements showed the flip inside `SettingsView.onAppear` is a redundant no-op because the button flipped first. |
 
 ### Modified files (3C only — if reached)
 

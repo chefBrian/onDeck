@@ -1,4 +1,7 @@
 import SwiftUI
+#if DEBUG
+import os.log
+#endif
 
 private enum BattingProximity {
     case atBat
@@ -739,7 +742,19 @@ struct FooterButtons: View {
         HStack(spacing: 0) {
             footerButton(systemIcon: "gear", label: "Settings") {
                 dismissMenu()
-                NSApp.setActivationPolicy(.regular)
+                #if DEBUG
+                let beforeMB = MemoryPressureRelief.currentFootprintMB()
+                Logger(subsystem: "dev.bjc.onDeck", category: "memory")
+                    .notice("settings button tapped (pre-flip): \(beforeMB, privacy: .public)MB")
+                #endif
+                if SETTINGS_FLIP_ACTIVATION_POLICY {
+                    NSApp.setActivationPolicy(.regular)
+                }
+                #if DEBUG
+                let afterMB = MemoryPressureRelief.currentFootprintMB()
+                Logger(subsystem: "dev.bjc.onDeck", category: "memory")
+                    .notice("settings button tapped (post-flip): \(afterMB, privacy: .public)MB (\(afterMB - beforeMB, privacy: .public)MB delta)")
+                #endif
                 NSApp.activate()
                 openSettings()
             }
