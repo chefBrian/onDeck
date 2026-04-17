@@ -152,6 +152,7 @@ struct SettingsView: View {
         }
     }
 
+    @MainActor
     private func handleOnAppear() async {
         #if DEBUG
         let cycle = await SettingsCycleCounter.shared.recordOpen()
@@ -177,8 +178,11 @@ struct SettingsView: View {
         #endif
     }
 
+    @MainActor
     private func handleOnDisappear() async {
         #if DEBUG
+        await SettingsCycleCounter.shared.recordClose()
+
         let t0 = MemoryPressureRelief.currentFootprintMB()
         memoryLogger.notice("settings onDisappear entry: \(t0, privacy: .public)MB")
         #endif
@@ -200,8 +204,6 @@ struct SettingsView: View {
 
         let t3 = MemoryPressureRelief.currentFootprintMB()
         memoryLogger.notice("settings post-relief: \(t3, privacy: .public)MB (cycle residual vs onDisappear entry: \(t3 - t0, privacy: .public)MB)")
-
-        await SettingsCycleCounter.shared.recordClose()
         #endif
     }
 }
