@@ -15,6 +15,7 @@ xcuserdata/
 
 # Build artifacts
 build/
+build-*/
 
 # Docs
 docs/
