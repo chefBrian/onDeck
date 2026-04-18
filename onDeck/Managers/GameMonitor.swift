@@ -276,10 +276,18 @@ final class GameMonitor {
             onLineupUpdate?(gamePk)
         }
 
-        // abstractGameState "Live" covers both "In Progress" and mid-game pauses
-        // (rain delays, manager challenges, suspensions). Pre-game "Delayed Start"
-        // has abstractGameState "Preview", so it's still correctly excluded.
-        guard feed.gameState == "Live" else {
+        // Allowlist of detailedStates that count as "ball in play or paused mid-play".
+        // abstractGameState "Live" alone isn't enough - it also covers "Warmup" (~30 min
+        // pre-first-pitch) and briefly "Game Over" before the flip to Final. Pre-game
+        // "Delayed Start: Rain" carries abstractGameState "Preview", so hasPrefix("Delayed")
+        // here only matches the mid-game "Delayed: Rain" form - don't tighten it without
+        // re-checking, or rain delay detection breaks.
+        let detailed = feed.detailedState ?? ""
+        let isPlayable = detailed == "In Progress"
+                      || detailed.hasPrefix("Delayed")
+                      || detailed.hasPrefix("Suspended")
+                      || detailed == "Manager challenge"
+        guard feed.gameState == "Live", isPlayable else {
             log.debug("[GameMonitor] Game \(gamePk) state: \(feed.gameState, privacy: .public)/\(feed.detailedState ?? "nil", privacy: .public) (skipping)")
             return
         }
