@@ -6,14 +6,25 @@ import Darwin
 /// at 1 Hz and tracks current + session-max `phys_footprint` (the same
 /// metric Activity Monitor's "Memory" column surfaces on modern macOS).
 ///
+/// `maxBytes` only ratchets upward on *sustained* readings — the trailing
+/// window's minimum must exceed the current max. Transient spikes don't
+/// inflate the high-water mark, which is what you want when eyeballing
+/// steady-state memory pressure rather than hunting one-off allocation
+/// peaks.
+///
 /// Wrapped entirely in `#if DEBUG` so the type - and all its storage and
 /// the poll task - compiles out of Release builds.
 @MainActor
 @Observable
 final class MemoryStats {
+    /// Number of consecutive 1 Hz samples (≈ seconds) a reading must hold
+    /// before `maxBytes` is allowed to ratchet up to it.
+    static let sustainedSampleCount = 20
+
     private(set) var currentBytes: UInt64 = 0
     private(set) var maxBytes: UInt64 = 0
 
+    private var recentSamples: [UInt64] = []
     private var pollTask: Task<Void, Never>?
 
     func start() {
@@ -42,12 +53,19 @@ final class MemoryStats {
     }
 
     /// Applies an observed footprint reading to `currentBytes` and ratchets
-    /// `maxBytes` upward. Split out from `sample()` so the ratchet can be
-    /// exercised deterministically in `MemoryStatsTests` without having to
-    /// predict how the kernel will report `phys_footprint` between calls.
+    /// `maxBytes` upward only when the trailing window's minimum exceeds
+    /// it — i.e. the reading has held for `sustainedSampleCount` samples.
+    /// Split out from `sample()` so the ratchet can be exercised
+    /// deterministically in `MemoryStatsTests` without having to predict
+    /// how the kernel will report `phys_footprint` between calls.
     func applySample(bytes: UInt64) {
         currentBytes = bytes
-        if bytes > maxBytes { maxBytes = bytes }
+        recentSamples.append(bytes)
+        if recentSamples.count > Self.sustainedSampleCount {
+            recentSamples.removeFirst()
+        }
+        let sustainedFloor = recentSamples.min() ?? bytes
+        if sustainedFloor > maxBytes { maxBytes = sustainedFloor }
     }
 
     var currentMB: Int { Int(currentBytes / 1_048_576) }
