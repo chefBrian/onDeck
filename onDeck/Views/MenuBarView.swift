@@ -4,31 +4,40 @@ private enum BattingProximity {
     case atBat
     case onDeck
     case dueUp
-    case order(Int)
+    case order(Int)             // distance from current batter, 3...8
+    case notBatting(spot: Int)  // other team is up; sort by lineup spot, below all live proximity
 
     /// Distance-based when the team is batting (0 = at bat, 8 = just finished),
     /// so the player who just batted sinks and bubbles back up as lineup cycles.
+    /// notBatting bumps into a separate band so a leadoff hitter on a non-batting
+    /// team doesn't tie with .onDeck.
     var sortKey: Int {
         switch self {
         case .atBat: 0
         case .onDeck: 1
         case .dueUp: 2
         case .order(let n): n
+        case .notBatting(let spot): 50 + spot
         }
     }
 }
 
 /// Stacks tiers on top of the proximity sort: 0 = normal proximity (distance-based
 /// so just-batted sinks, on-deck bubbles up), +100 = mid-game delay, +200 =
-/// lineup card filed without this player.
+/// lineup card filed without this player. Pitchers have nil proximity - they get
+/// a base of 0 if currently pitching (live action, like .atBat) or 70 otherwise
+/// (above .notBatting hitters, below the delay tier).
 private func inGameSortKey(for player: Player, proximity: BattingProximity?, in appState: AppState) -> Int {
-    let base = proximity?.sortKey ?? 4
     guard let game = appState.games.first(where: { game in
         game.homeTeam.contains(player.team) || game.awayTeam.contains(player.team)
             || player.team.contains(game.homeTeam) || player.team.contains(game.awayTeam)
-    }) else { return base }
+    }) else { return proximity?.sortKey ?? 70 }
 
     let feed = appState.gameMonitor.latestFeeds[game.id]
+    let base: Int = {
+        if let key = proximity?.sortKey { return key }
+        return feed?.currentPitcherID == player.id ? 0 : 70
+    }()
 
     // Not in Lineup: own side's card is filed and this player isn't on it.
     if let side = game.side(for: player),
@@ -73,7 +82,7 @@ private func battingProximity(for player: Player, in appState: AppState) -> Batt
 
     guard teamIsBatting, let currentBatterID = feed.currentBatterID,
           let currentIndex = battingOrder.firstIndex(of: currentBatterID) else {
-        return .order(playerIndex + 1)
+        return .notBatting(spot: playerIndex)
     }
 
     let count = battingOrder.count
@@ -381,7 +390,7 @@ private struct LivePlayerRow: View {
                                     Circle()
                                         .strokeBorder(.orange, lineWidth: 1.5)
                                         .frame(width: 6, height: 6)
-                                case .order:
+                                case .order, .notBatting:
                                     EmptyView()
                                 case nil:
                                     if isActive {
@@ -470,7 +479,7 @@ private struct LivePlayerRow: View {
         case .atBat, nil: nil
         case .onDeck: "On Deck"
         case .dueUp: "In Hole"
-        case .order: nil
+        case .order, .notBatting: nil
         }
         switch (prefix, statLine) {
         case let (p?, b?): return "\(p) · \(b)"
