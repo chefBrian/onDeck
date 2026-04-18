@@ -188,6 +188,64 @@ enum LiveFeedPatcher {
             feed.runnerOnThird = nil
             return
 
+        // --- linescore / offense - whole-object add when a runner advances into an empty slot
+        // Server sends: {"op":"add","path":"/liveData/linescore/offense/second","value":{"id":N,"fullName":"...","link":"..."}}
+        case ("add", "/liveData/linescore/offense/first"):
+            feed.runnerOnFirst = runnerID(fromObject: value)
+            return
+        case ("add", "/liveData/linescore/offense/second"):
+            feed.runnerOnSecond = runnerID(fromObject: value)
+            return
+        case ("add", "/liveData/linescore/offense/third"):
+            feed.runnerOnThird = runnerID(fromObject: value)
+            return
+
+        // --- linescore / offense - batter-reaches-base copy ops
+        // Server sends: {"op":"copy","path":"/liveData/linescore/offense/first","from":"/liveData/plays/allPlays/N/matchup/batter"}
+        // At this point in the patch batch, feed.currentBatterID is still the batter who just
+        // reached base (the `replace /currentPlay/matchup/batter/id` for the NEXT batter arrives
+        // in a later entry). Verified against real MLB diffPatch output on 2026-04-18.
+        case ("copy", "/liveData/linescore/offense/first"):
+            if isBatterFromPath(from) {
+                feed.runnerOnFirst = feed.currentBatterID
+            } else {
+                feed.timeStamp = nil
+            }
+            return
+        case ("copy", "/liveData/linescore/offense/second"):
+            if isBatterFromPath(from) {
+                feed.runnerOnSecond = feed.currentBatterID
+            } else {
+                feed.timeStamp = nil
+            }
+            return
+        case ("copy", "/liveData/linescore/offense/third"):
+            if isBatterFromPath(from) {
+                feed.runnerOnThird = feed.currentBatterID
+            } else {
+                feed.timeStamp = nil
+            }
+            return
+
+        // --- linescore / offense - decorative sub-paths on base slots (runner display name/link)
+        // Kept as explicit no-op cases rather than folding into decorativePrefixes below,
+        // because `/liveData/linescore/offense/first` itself IS modeled (id + the copy/add
+        // handlers above) — we only want fullName and link silenced under those slots.
+        case ("replace", "/liveData/linescore/offense/first/fullName"),
+             ("add", "/liveData/linescore/offense/first/fullName"),
+             ("replace", "/liveData/linescore/offense/first/link"),
+             ("add", "/liveData/linescore/offense/first/link"),
+             ("replace", "/liveData/linescore/offense/second/fullName"),
+             ("add", "/liveData/linescore/offense/second/fullName"),
+             ("replace", "/liveData/linescore/offense/second/link"),
+             ("add", "/liveData/linescore/offense/second/link"),
+             ("replace", "/liveData/linescore/offense/third/fullName"),
+             ("add", "/liveData/linescore/offense/third/fullName"),
+             ("replace", "/liveData/linescore/offense/third/link"),
+             ("add", "/liveData/linescore/offense/third/link"):
+            return
+
+
         // --- linescore / offense - typed runner advance (move ops; see PHASE-1-TRACE)
         case ("move", "/liveData/linescore/offense/second"):
             if from == "/liveData/linescore/offense/first" {
@@ -215,8 +273,17 @@ enum LiveFeedPatcher {
         if tryApplyBoxscoreArrayPatch(opType: opType, path: path, value: value, feed: &feed) { return }
         if tryApplyPlayerStatsPatch(opType: opType, path: path, value: value, feed: &feed) { return }
 
+        #if DEBUG
+        // Known-decorative paths — silently skip without polluting the unknown-patch log.
+        // Paths that matter are caught by the specific cases above; everything matching a
+        // prefix here is a tree we deliberately don't model (heatmaps, pitch-by-pitch,
+        // historical plays, venue metadata, etc.). Gated on DEBUG because the logger below
+        // is itself DEBUG-only — there's nothing to prevent in Release.
+        if isDecorative(path: path) { return }
+
         // Fallthrough: unknown op - log and skip
         UnknownPatchLogger.shared.record(op: opType, path: path, from: from, value: value)
+        #endif
     }
 
     // MARK: - Boxscore array patches (batting orders, pitcher lists)
@@ -465,4 +532,118 @@ enum LiveFeedPatcher {
         if let s = value as? String { return Int(s) }
         return nil
     }
+
+    /// Extracts an `id` field from a JSON object value. Used by the whole-object
+    /// `add` handlers for `/liveData/linescore/offense/{first|second|third}`,
+    /// whose value shape is `{"id": N, "fullName": "...", "link": "..."}`.
+    private static func runnerID(fromObject value: Any?) -> Int? {
+        guard let dict = value as? [String: Any] else { return nil }
+        return intValue(dict["id"])
+    }
+
+    /// True if `from` points at a batter field — either `/plays/currentPlay/matchup/batter`
+    /// or `/plays/allPlays/N/matchup/batter`. Guards the copy-op shortcut that resolves
+    /// "batter reaches base" from `feed.currentBatterID`.
+    private static func isBatterFromPath(_ from: String?) -> Bool {
+        guard let from else { return false }
+        return from.hasSuffix("/matchup/batter")
+            && from.hasPrefix("/liveData/plays/")
+    }
+
+    #if DEBUG
+    /// Path prefixes for subtrees the app deliberately doesn't model. Any patch whose
+    /// `path` matches one of these (exact or followed by `/`) is silently dropped rather
+    /// than logged as unknown. Handled paths are caught by the specific cases in
+    /// `applyOne(...)` above — the prefix check runs after them and after the two
+    /// `tryApply*` handlers, so silencing these prefixes cannot mask a real handler.
+    ///
+    /// DEBUG-only: in Release the unknown-patch logger is itself a no-op, so this table
+    /// would just add CPU for no benefit.
+    private static let decorativePrefixes: [String] = [
+        // currentPlay subtrees — matchup.batter/pitcher id+fullName, about.isComplete,
+        // result.event, result.description are all handled above.
+        "/liveData/plays/currentPlay/matchup/batterHotColdZone",
+        "/liveData/plays/currentPlay/matchup/batterHotColdZones",
+        "/liveData/plays/currentPlay/matchup/batterHotColdZoneStats",
+        "/liveData/plays/currentPlay/matchup/batSide",
+        "/liveData/plays/currentPlay/matchup/pitchHand",
+        "/liveData/plays/currentPlay/matchup/splits",
+        "/liveData/plays/currentPlay/matchup/postOnFirst",
+        "/liveData/plays/currentPlay/matchup/postOnSecond",
+        "/liveData/plays/currentPlay/matchup/postOnThird",
+        "/liveData/plays/currentPlay/matchup/batter/link",
+        "/liveData/plays/currentPlay/matchup/pitcher/link",
+        "/liveData/plays/currentPlay/playEvents",
+        "/liveData/plays/currentPlay/runners",
+        "/liveData/plays/currentPlay/runnerIndex",
+        "/liveData/plays/currentPlay/pitchIndex",
+        "/liveData/plays/currentPlay/actionIndex",
+        "/liveData/plays/currentPlay/about",
+        "/liveData/plays/currentPlay/result",
+        "/liveData/plays/currentPlay/count",
+        "/liveData/plays/currentPlay/atBatIndex",
+        "/liveData/plays/currentPlay/playEndTime",
+        // Historical plays — entire subtrees.
+        "/liveData/plays/allPlays",
+        "/liveData/plays/playsByInning",
+        "/liveData/plays/scoringPlays",
+        // Boxscore — battingOrder, pitchers arrays, and per-player stats handled via
+        // tryApplyBoxscoreArrayPatch / tryApplyPlayerStatsPatch above.
+        "/liveData/boxscore/topPerformers",
+        "/liveData/boxscore/info",
+        "/liveData/boxscore/pitchingNotes",
+        "/liveData/boxscore/teams/home/teamStats",
+        "/liveData/boxscore/teams/away/teamStats",
+        "/liveData/boxscore/teams/home/battingTotals",
+        "/liveData/boxscore/teams/away/battingTotals",
+        "/liveData/boxscore/teams/home/pitchingTotals",
+        "/liveData/boxscore/teams/away/pitchingTotals",
+        "/liveData/boxscore/teams/home/note",
+        "/liveData/boxscore/teams/away/note",
+        "/liveData/boxscore/teams/home/info",
+        "/liveData/boxscore/teams/away/info",
+        "/liveData/boxscore/teams/home/team",
+        "/liveData/boxscore/teams/away/team",
+        // Linescore — teams/*/runs, currentInning, inningHalf, inningState, balls,
+        // strikes, outs, and offense/{first,second,third} handled above.
+        "/liveData/linescore/defense",
+        "/liveData/linescore/offense/onDeck",
+        "/liveData/linescore/offense/inHole",
+        "/liveData/linescore/offense/batter",
+        "/liveData/linescore/offense/pitcher",
+        "/liveData/linescore/offense/team",
+        "/liveData/linescore/offense/battingOrder",
+        "/liveData/linescore/innings",
+        "/liveData/linescore/teams/home/hits",
+        "/liveData/linescore/teams/away/hits",
+        "/liveData/linescore/teams/home/errors",
+        "/liveData/linescore/teams/away/errors",
+        "/liveData/linescore/teams/home/leftOnBase",
+        "/liveData/linescore/teams/away/leftOnBase",
+        "/liveData/linescore/isTopInning",
+        "/liveData/linescore/currentInningOrdinal",
+        // metaData event streams we don't consume.
+        "/metaData/gameEvents",
+        "/metaData/logicalEvents",
+        // gameData — status.abstractGameState + status.detailedState handled above;
+        // everything else here is admin/narrative metadata.
+        "/gameData/absChallenges",
+        "/gameData/moundVisits",
+        "/gameData/review",
+        "/gameData/weather",
+        "/gameData/gameInfo",
+        "/gameData/status/statusCode",
+        "/gameData/status/reason",
+        "/gameData/status/codedGameState",
+        "/gameData/status/abstractGameCode",
+        "/gameData/players",
+    ]
+
+    private static func isDecorative(path: String) -> Bool {
+        for prefix in decorativePrefixes {
+            if path == prefix || path.hasPrefix(prefix + "/") { return true }
+        }
+        return false
+    }
+    #endif
 }
