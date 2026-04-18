@@ -111,7 +111,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: 400)
+        .frame(minWidth: 450, minHeight: 720)
         .onAppear {
             NSApplication.shared.setActivationPolicy(.regular)
         }
