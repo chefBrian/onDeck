@@ -732,6 +732,13 @@ final class TeamLogoCache {
             return nil
         }
     }
+
+    /// Drops the in-memory NSImage references. The PNGs remain on disk, so the
+    /// next logo access reloads in ~1 ms. Called from `MemoryPressureRelief` at
+    /// idle transitions.
+    func evictMemoryCache() {
+        memory.removeAll(keepingCapacity: false)
+    }
 }
 
 // MARK: - Footer Buttons

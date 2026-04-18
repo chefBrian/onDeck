@@ -5,12 +5,24 @@ private let log = Logger(subsystem: "dev.bjc.onDeck", category: "MLB API")
 
 struct MLBStatsAPI: Sendable {
 
+    /// Private session with `urlCache = nil` - the shared URLCache would otherwise
+    /// accumulate hundreds of KB per poll cycle for responses we immediately re-poll,
+    /// and `phys_footprint` doesn't shrink when URLCache overflows its budget.
+    /// `httpMaximumConnectionsPerHost = 2` also caps the connection-pool residency.
+    private static let session: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.urlCache = nil
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.httpMaximumConnectionsPerHost = 2
+        return URLSession(configuration: config)
+    }()
+
     // MARK: - Player Search
 
     func searchPlayer(name: String, teamName: String?) async throws -> Int? {
         let cleanName = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? name
         let url = URL(string: "https://statsapi.mlb.com/api/v1/people/search?names=\(cleanName)&hydrate=currentTeam")!
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await Self.session.data(from: url)
         log.debug("[MLB API] GET /people/search name=\(name, privacy: .public) \(Self.formatBytes(data.count), privacy: .public)")
         let response = try JSONDecoder().decode(SearchResponse.self, from: data)
 
@@ -37,7 +49,7 @@ struct MLBStatsAPI: Sendable {
     func fetchSchedule(date: Date) async throws -> [Game] {
         let dateString = Self.dateFormatter.string(from: date)
         let url = URL(string: "https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=\(dateString)&hydrate=team,broadcasts,probablePitcher,lineups")!
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await Self.session.data(from: url)
         log.debug("[MLB API] GET /schedule date=\(dateString, privacy: .public) \(Self.formatBytes(data.count), privacy: .public)")
         let response = try JSONDecoder().decode(ScheduleResponse.self, from: data)
 
@@ -73,7 +85,7 @@ struct MLBStatsAPI: Sendable {
     /// Fetches the full live feed and returns parsed data.
     func fetchLiveFeedRaw(gamePk: Int, label: String? = nil) async throws -> LiveFeedData {
         let url = URL(string: "https://statsapi.mlb.com/api/v1.1/game/\(gamePk)/feed/live")!
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await Self.session.data(from: url)
         let tag = label.map { " \($0)" } ?? ""
         log.debug("[MLB API] GET /feed/live game=\(gamePk)\(tag, privacy: .public) \(Self.formatBytes(data.count), privacy: .public)")
         return try Self.decodeLiveFeed(from: data)
@@ -91,7 +103,7 @@ struct MLBStatsAPI: Sendable {
     func fetchDiffPatch(gamePk: Int, since timecode: String, label: String? = nil) async throws -> DiffPatchResult {
         let now = Self.currentTimecode()
         let url = URL(string: "https://statsapi.mlb.com/api/v1.1/game/\(gamePk)/feed/live/diffPatch?startTimecode=\(timecode)&endTimecode=\(now)")!
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await Self.session.data(from: url)
         let tag = label.map { " \($0)" } ?? ""
 
         let parsed = try JSONSerialization.jsonObject(with: data)
@@ -186,7 +198,7 @@ struct MLBStatsAPI: Sendable {
         let timestamp = Self.iso8601Formatter.string(from: since)
         let encoded = timestamp.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? timestamp
         let url = URL(string: "https://statsapi.mlb.com/api/v1/game/changes?updatedSince=\(encoded)&sportId=1")!
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await Self.session.data(from: url)
         log.debug("[MLB API] GET /game/changes \(Self.formatBytes(data.count), privacy: .public)")
         let response = try JSONDecoder().decode(GameChangesResponse.self, from: data)
         let gamePks = response.dates?.flatMap { $0.games.map(\.gamePk) } ?? []
