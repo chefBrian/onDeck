@@ -6,14 +6,44 @@ private enum BattingProximity {
     case dueUp
     case order(Int)
 
+    /// Distance-based when the team is batting (0 = at bat, 8 = just finished),
+    /// so the player who just batted sinks and bubbles back up as lineup cycles.
     var sortKey: Int {
         switch self {
         case .atBat: 0
         case .onDeck: 1
         case .dueUp: 2
-        case .order: 3
+        case .order(let n): n
         }
     }
+}
+
+/// Stacks tiers on top of the proximity sort: 0 = normal proximity (distance-based
+/// so just-batted sinks, on-deck bubbles up), +100 = mid-game delay, +200 =
+/// lineup card filed without this player.
+private func inGameSortKey(for player: Player, proximity: BattingProximity?, in appState: AppState) -> Int {
+    let base = proximity?.sortKey ?? 4
+    guard let game = appState.games.first(where: { game in
+        game.homeTeam.contains(player.team) || game.awayTeam.contains(player.team)
+            || player.team.contains(game.homeTeam) || player.team.contains(game.awayTeam)
+    }) else { return base }
+
+    let feed = appState.gameMonitor.latestFeeds[game.id]
+
+    // Not in Lineup: own side's card is filed and this player isn't on it.
+    if let side = game.side(for: player),
+       let lineup = appState.gameMonitor.lineupPlayerIDs[game.id],
+       lineup.isSubmitted(for: side),
+       !lineup.ids(for: side).contains(player.id) {
+        return 200 + base
+    }
+
+    if let detailed = feed?.detailedState,
+       detailed.hasPrefix("Delayed") || detailed.hasPrefix("Suspended") {
+        return 100 + base
+    }
+
+    return base
 }
 
 private func battingProximity(for player: Player, in appState: AppState) -> BattingProximity? {
@@ -47,14 +77,12 @@ private func battingProximity(for player: Player, in appState: AppState) -> Batt
     }
 
     let count = battingOrder.count
-    if player.id == currentBatterID {
-        return .atBat
-    } else if (currentIndex + 1) % count == playerIndex {
-        return .onDeck
-    } else if (currentIndex + 2) % count == playerIndex {
-        return .dueUp
-    } else {
-        return .order(playerIndex + 1)
+    let distance = (playerIndex - currentIndex + count) % count
+    switch distance {
+    case 0: return .atBat
+    case 1: return .onDeck
+    case 2: return .dueUp
+    default: return .order(distance)
     }
 }
 
@@ -122,8 +150,11 @@ private struct InGameSection: View {
         if !appState.inGamePlayers.isEmpty {
             // Compute proximity once per player; reuse for sort, animation, and row rendering.
             let entries = appState.inGamePlayers
-                .map { (player: $0, proximity: battingProximity(for: $0, in: appState)) }
-                .sorted { ($0.proximity?.sortKey ?? 4) < ($1.proximity?.sortKey ?? 4) }
+                .map { player -> (player: Player, proximity: BattingProximity?, sortKey: Int) in
+                    let proximity = battingProximity(for: player, in: appState)
+                    return (player, proximity, inGameSortKey(for: player, proximity: proximity, in: appState))
+                }
+                .sorted { $0.sortKey < $1.sortKey }
             SectionHeader(
                 title: "In Game",
                 showClose: appState.activePlayers.isEmpty,
@@ -139,7 +170,7 @@ private struct InGameSection: View {
                 )
                 .matchedGeometryEffect(id: entry.player.id, in: namespace)
             }
-            .animation(.easeInOut(duration: 0.3), value: entries.map { $0.proximity?.sortKey ?? 4 })
+            .animation(.easeInOut(duration: 0.3), value: entries.map(\.sortKey))
             SectionDivider()
         }
     }
@@ -425,22 +456,43 @@ private struct LivePlayerRow: View {
     private func formattedStatLine(gamePk: Int) -> String? {
         if !isInLineup { return "Not in Lineup" }
         guard let feed = appState.gameMonitor.latestFeeds[gamePk] else { return nil }
-        if player.isPitcher && !player.isHitter {
-            return feed.playerStats[player.id]?.pitching?.formatted
+        let statLine: String? = player.isPitcher && !player.isHitter
+            ? feed.playerStats[player.id]?.pitching?.formatted
+            : feed.playerStats[player.id]?.batting?.formatted
+        if let delay = delayLabel(detailedState: feed.detailedState) {
+            if let statLine { return "\(delay) · \(statLine)" }
+            return delay
         }
-        let batting = feed.playerStats[player.id]?.batting?.formatted
+        if player.isPitcher && !player.isHitter {
+            return statLine
+        }
         let prefix: String? = switch proximity {
         case .atBat, nil: nil
         case .onDeck: "On Deck"
         case .dueUp: "In Hole"
         case .order: nil
         }
-        switch (prefix, batting) {
+        switch (prefix, statLine) {
         case let (p?, b?): return "\(p) · \(b)"
         case let (p?, nil): return p
         case let (nil, b?): return b
         case (nil, nil): return nil
         }
+    }
+
+    /// Mid-game pauses ("Delayed: Rain", "Suspended: Rain") - pre-game delays have
+    /// abstractGameState "Preview" and don't reach this path.
+    private func delayLabel(detailedState: String?) -> String? {
+        guard let detailed = detailedState else { return nil }
+        if detailed.hasPrefix("Delayed: ") {
+            return "\(detailed.dropFirst("Delayed: ".count)) Delay"
+        }
+        if detailed.hasPrefix("Suspended: ") {
+            return "Suspended: \(detailed.dropFirst("Suspended: ".count))"
+        }
+        if detailed == "Delayed" { return "Delayed" }
+        if detailed == "Suspended" { return "Suspended" }
+        return nil
     }
 
     private func openStream() {

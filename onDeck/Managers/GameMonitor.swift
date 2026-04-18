@@ -276,7 +276,10 @@ final class GameMonitor {
             onLineupUpdate?(gamePk)
         }
 
-        guard feed.gameState == "Live", feed.detailedState == "In Progress" else {
+        // abstractGameState "Live" covers both "In Progress" and mid-game pauses
+        // (rain delays, manager challenges, suspensions). Pre-game "Delayed Start"
+        // has abstractGameState "Preview", so it's still correctly excluded.
+        guard feed.gameState == "Live" else {
             log.debug("[GameMonitor] Game \(gamePk) state: \(feed.gameState, privacy: .public)/\(feed.detailedState ?? "nil", privacy: .public) (skipping)")
             return
         }
@@ -287,7 +290,10 @@ final class GameMonitor {
 
         // Between half-innings, currentBatter/currentPitcher are stale holdover from the
         // last play of the previous half-inning - MLB doesn't clear them until play resumes.
-        let isBreak = feed.inningState == "Middle" || feed.inningState == "End"
+        // Mid-game delays (rain etc.) also pause play, so flip active players out - the
+        // "Active Now" section should only hold players whose at-bat/inning is live.
+        let isInProgress = feed.detailedState == "In Progress"
+        let isBreak = !isInProgress || feed.inningState == "Middle" || feed.inningState == "End"
 
         let awayShort = game.awayTeam.split(separator: " ").last.map(String.init) ?? game.awayTeam
         let homeShort = game.homeTeam.split(separator: " ").last.map(String.init) ?? game.homeTeam
