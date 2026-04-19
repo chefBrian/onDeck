@@ -404,12 +404,20 @@ private struct LivePlayerRow: View {
                                     .lineLimit(1)
                             }
                             if let game, let text = formattedStatLine(gamePk: game.id) {
-                                Text(text)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                                    .padding(.leading, isActive ? 10 : 0)
+                                HStack(spacing: 4) {
+                                    if let icon = delayIcon(detailedState: feed.detailedState) {
+                                        Image(systemName: icon)
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(.blue)
+                                            .nsToolTip(delayTooltip(detailedState: feed.detailedState))
+                                    }
+                                    Text(text)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                }
+                                .padding(.leading, isActive ? 10 : 0)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -512,6 +520,44 @@ private struct LivePlayerRow: View {
     }
 }
 
+/// SwiftUI's `.help()` doesn't render reliably inside MenuBarExtra popovers - drop to
+/// an AppKit NSView with `toolTip` set, overlaid behind the view so it covers the hit area.
+private struct NSToolTip: NSViewRepresentable {
+    let text: String
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView()
+        v.toolTip = text
+        return v
+    }
+    func updateNSView(_ nsView: NSView, context: Context) { nsView.toolTip = text }
+}
+
+extension View {
+    fileprivate func nsToolTip(_ text: String?) -> some View {
+        overlay(text.map { NSToolTip(text: $0) })
+    }
+}
+
+/// SF Symbol for a delay/suspension/postponement, or nil if the game is playing normally.
+/// Shared by UPCOMING (pre-game "Delayed Start: Rain") and IN GAME (mid-game "Delayed: Rain").
+private func delayIcon(detailedState: String?) -> String? {
+    guard let detailed = detailedState else { return nil }
+    if detailed.contains("Rain") { return "cloud.rain.fill" }
+    if detailed.hasPrefix("Delayed") || detailed.hasPrefix("Suspended") { return "clock.badge.exclamationmark.fill" }
+    if detailed == "Postponed" { return "xmark.octagon.fill" }
+    return nil
+}
+
+/// Friendly tooltip label, e.g. "Delayed: Rain" / "Delayed Start: Rain" → "Rain Delay".
+private func delayTooltip(detailedState: String?) -> String? {
+    guard let detailed = detailedState else { return nil }
+    if detailed.contains("Rain") { return "Rain Delay" }
+    if detailed.hasPrefix("Delayed") { return "Delayed" }
+    if detailed.hasPrefix("Suspended") { return "Suspended" }
+    if detailed == "Postponed" { return "Postponed" }
+    return detailed
+}
+
 private func dismissMenuBarWindow() {
     NSApp.keyWindow?.close()
     DispatchQueue.main.async {
@@ -584,6 +630,14 @@ private struct UpcomingPlayerRow: View {
             Text(player.name)
             Spacer()
             if case .upcoming(let startTime) = appState.stateManager.playerStates[player.id] {
+                if let game,
+                   let detailed = appState.gameMonitor.latestFeeds[game.id]?.detailedState,
+                   let icon = delayIcon(detailedState: detailed) {
+                    Image(systemName: icon)
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+                        .nsToolTip(delayTooltip(detailedState: detailed))
+                }
                 Text(startTime, style: .time)
                     .font(.caption)
                     .foregroundStyle(.secondary)
