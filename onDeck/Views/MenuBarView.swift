@@ -630,17 +630,22 @@ private struct UpcomingPlayerRow: View {
             Text(player.name)
             Spacer()
             if case .upcoming(let startTime) = appState.stateManager.playerStates[player.id] {
-                if let game,
-                   let detailed = appState.gameMonitor.latestFeeds[game.id]?.detailedState,
-                   let icon = delayIcon(detailedState: detailed) {
+                let detailed = game.flatMap { appState.gameMonitor.latestFeeds[$0.id]?.detailedState }
+                if let icon = delayIcon(detailedState: detailed) {
                     Image(systemName: icon)
                         .font(.caption)
                         .foregroundStyle(.blue)
                         .nsToolTip(delayTooltip(detailedState: detailed))
                 }
-                Text(startTime, style: .time)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if detailed == "Postponed" {
+                    Text("PPD")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(startTime, style: .time)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .padding(.horizontal, 12)

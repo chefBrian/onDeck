@@ -236,12 +236,21 @@ final class GameMonitor {
             processFeed(feed, gamePk: gamePk, game: game)
 
             if feed.gameState == "Final" {
-                let playerIDsInGame = rosterPlayerIDs.filter { id in
-                    isPlayerInGame(playerID: id, game: game)
+                // Postponed carries gameState "Final" but has no stats - marking players
+                // .gameOver would filter them out of the UI entirely (Done section
+                // requires a statLine). Leave them in .upcoming so the UPCOMING row's
+                // red X icon + "PPD" label stays visible until the next day's refresh.
+                if feed.detailedState == "Postponed" {
+                    log.notice("[GameMonitor] Game \(gamePk) Postponed - retaining .upcoming state, stopping poll")
+                    stopMonitoring(gamePk: gamePk)
+                } else {
+                    let playerIDsInGame = rosterPlayerIDs.filter { id in
+                        isPlayerInGame(playerID: id, game: game)
+                    }
+                    log.notice("[GameMonitor] Game \(gamePk) is Final - marking done: \(playerIDsInGame, privacy: .public)")
+                    stateManager?.setGameOver(playerIDs: Array(playerIDsInGame), gamePk: gamePk)
+                    stopMonitoring(gamePk: gamePk)
                 }
-                log.notice("[GameMonitor] Game \(gamePk) is Final - marking done: \(playerIDsInGame, privacy: .public)")
-                stateManager?.setGameOver(playerIDs: Array(playerIDsInGame), gamePk: gamePk)
-                stopMonitoring(gamePk: gamePk)
             }
         } catch {
             // Transient error - preserve last-known feed for UI continuity, but
