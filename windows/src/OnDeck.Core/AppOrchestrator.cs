@@ -448,8 +448,11 @@ public sealed class AppOrchestrator
 
     // MARK: - Change handling
 
-    private void HandleStateChange(int playerId, PlayerState? oldState, PlayerState newState) =>
+    private void HandleStateChange(int playerId, PlayerState? oldState, PlayerState newState)
+    {
         SchedulePlayerListRebuild();
+        RunGuarded(() => HandleStateTransitionAsync(playerId, oldState, newState));
+    }
 
     private void HandleGameStart(int gamePk)
     {
@@ -516,6 +519,107 @@ public sealed class AppOrchestrator
             System.Diagnostics.Debug.WriteLine($"[AppOrchestrator] notification work failed: {ex}");
         }
     }
+
+    // MARK: - Notifications
+
+    private bool IsStillActive(int playerId, PlayerState.ActiveRole role) =>
+        _states.PlayerStates.GetValueOrDefault(playerId) is PlayerState.Active active
+        && active.Context.Role == role;
+
+    private async Task HandleStateTransitionAsync(int playerId, PlayerState? oldState, PlayerState newState)
+    {
+        if (_roster.Players.FirstOrDefault(candidate => candidate.Id == playerId) is not { } player) return;
+        if (player.IsUnavailable) return;
+        if (_hideBenchPlayers && player.IsOnBench) return;
+
+        switch (newState)
+        {
+            case PlayerState.Active { Context: var context } when oldState is not PlayerState.Active:
+            {
+                var gameString = FormatGameString(context);
+                var streamUrl = StreamUrlFor(context.GamePk);
+
+                if (context.Role == PlayerState.ActiveRole.Pitching)
+                {
+                    await _notifications.NotifyPitchingAsync(
+                        player.Name, player.Id, context.GamePk, gameString, context.Inning, streamUrl);
+
+                    // Race guard: state may have changed during the async send.
+                    if (!IsStillActive(playerId, PlayerState.ActiveRole.Pitching))
+                    {
+                        _notifications.PurgePitching(context.GamePk, playerId);
+                    }
+                }
+                else
+                {
+                    await _notifications.NotifyBattingAsync(
+                        player.Name, player.Id, context.GamePk, gameString, context.Inning, streamUrl);
+
+                    if (!IsStillActive(playerId, PlayerState.ActiveRole.Batting))
+                    {
+                        _notifications.PurgeBatting(context.GamePk, playerId);
+                    }
+                }
+
+                break;
+            }
+
+            case PlayerState.Upcoming when oldState is PlayerState.Active { Context: var context }:
+            {
+                if (context.Role == PlayerState.ActiveRole.Batting)
+                {
+                    _notifications.PurgeBatting(context.GamePk, playerId);
+
+                    if (_monitor.LastPlayDescriptions.TryGetValue(playerId, out var description))
+                    {
+                        await _notifications.NotifyAtBatResultAsync(
+                            player.Name, player.Id, description, StreamUrlFor(context.GamePk));
+                    }
+                }
+                else
+                {
+                    _notifications.PurgePitching(context.GamePk, playerId);
+                }
+
+                break;
+            }
+
+            case PlayerState.Inactive { Reason: PlayerState.InactiveReason.Substituted }
+                when oldState is PlayerState.Active { Context: var context }:
+            {
+                if (context.Role != PlayerState.ActiveRole.Pitching) break;
+
+                _notifications.PurgePitching(context.GamePk, playerId);
+                await _notifications.NotifyPitchingResultAsync(
+                    player.Name,
+                    player.Id,
+                    $"{player.Name} has been pulled from the game",
+                    StreamUrlFor(context.GamePk));
+                break;
+            }
+
+            case PlayerState.Inactive { Reason: PlayerState.InactiveReason.GameOver }
+                when oldState is PlayerState.Active { Context: var context }:
+            {
+                if (context.Role == PlayerState.ActiveRole.Batting)
+                {
+                    _notifications.PurgeBatting(context.GamePk, playerId);
+                }
+                else
+                {
+                    _notifications.PurgePitching(context.GamePk, playerId);
+                }
+
+                break;
+            }
+        }
+    }
+
+    private Uri? StreamUrlFor(int gamePk) =>
+        _games.FirstOrDefault(game => game.Id == gamePk) is { } match ? StreamLinkRouter.Url(match) : null;
+
+    private static string FormatGameString(PlayerState.GameContext context) =>
+        $"{context.AwayTeam} {context.AwayScore} - {context.HomeTeam} {context.HomeScore}";
 
     private PlayerDisplay BuildUpcomingRow(Player player, DateTimeOffset startTime)
     {
