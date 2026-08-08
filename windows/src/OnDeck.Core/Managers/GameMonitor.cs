@@ -351,6 +351,200 @@ public sealed class GameMonitor(MlbStatsApi mlb, TimeProvider? timeProvider = nu
             || player.Team.Contains(game.AwayTeam, StringComparison.Ordinal);
     }
 
-    // Task 8 adds ProcessFeed.
-    private void ProcessFeed(LiveFeedData feed, int gamePk, Game game) { }
+    // MARK: - Feed Processing
+
+    internal void ProcessFeed(LiveFeedData feed, int gamePk, Game game)
+    {
+        // Track lineup per side. Only overwrite a batting side when the feed actually has
+        // data for it - an empty side means that team hasn't filed its lineup card yet, not
+        // that we should drop what we had. Pitchers live in a separate set so that a filed
+        // batting card (used to gate "not in lineup" logic) doesn't falsely flag the probable
+        // starter as missing before the boxscore lists him.
+        var homeBatters = feed.HomeBattingOrder.ToHashSet();
+        var awayBatters = feed.AwayBattingOrder.ToHashSet();
+
+        var homePitchers = feed.HomePitchers.ToHashSet();
+        if (game.HomeProbablePitcherId is { } homeProbable) homePitchers.Add(homeProbable);
+
+        var awayPitchers = feed.AwayPitchers.ToHashSet();
+        if (game.AwayProbablePitcherId is { } awayProbable) awayPitchers.Add(awayProbable);
+
+        var existing = LineupPlayerIds.TryGetValue(gamePk, out var stored) ? stored : new GameLineup();
+        var updated = new GameLineup
+        {
+            Home = homeBatters.Count == 0 ? existing.Home : homeBatters,
+            Away = awayBatters.Count == 0 ? existing.Away : awayBatters,
+            HomePitchers = homePitchers.Count == 0 ? existing.HomePitchers : homePitchers,
+            AwayPitchers = awayPitchers.Count == 0 ? existing.AwayPitchers : awayPitchers,
+        };
+
+        if (!updated.Equals(existing))
+        {
+            LineupPlayerIds[gamePk] = updated;
+            OnLineupUpdate?.Invoke(gamePk);
+        }
+
+        // Allowlist of detailedStates that count as "ball in play or paused mid-play".
+        // abstractGameState "Live" alone isn't enough - it also covers "Warmup" (~30 min
+        // pre-first-pitch) and briefly "Game Over" before the flip to Final. Pre-game
+        // "Delayed Start: Rain" carries abstractGameState "Preview", so the "Delayed" prefix
+        // here only matches the mid-game "Delayed: Rain" form - don't tighten it without
+        // re-checking, or rain delay detection breaks.
+        var detailed = feed.DetailedState ?? "";
+        var isPlayable = detailed == "In Progress"
+                         || detailed.StartsWith("Delayed", StringComparison.Ordinal)
+                         || detailed.StartsWith("Suspended", StringComparison.Ordinal)
+                         || detailed == "Manager challenge";
+
+        if (feed.GameState != "Live" || !isPlayable) return;
+
+        if (_liveGamesSeen.Add(gamePk)) OnGameStart?.Invoke(gamePk);
+
+        // Between half-innings, currentBatter/currentPitcher are stale holdovers from the last
+        // play of the previous half-inning - MLB doesn't clear them until play resumes.
+        // Mid-game delays (rain etc.) also pause play, so flip active players out - the
+        // active section should only hold players whose at-bat/inning is live.
+        var isInProgress = feed.DetailedState == "In Progress";
+        var isBreak = !isInProgress || feed.InningState == "Middle" || feed.InningState == "End";
+
+        var awayShort = LastWord(game.AwayTeam);
+        var homeShort = LastWord(game.HomeTeam);
+        var inning = FormatInning(feed);
+
+        PlayerState.GameContext MakeContext(PlayerState.ActiveRole role) => new(
+            gamePk, role, inning,
+            homeShort, awayShort,
+            feed.HomeTeamId, feed.AwayTeamId,
+            feed.HomeScore, feed.AwayScore,
+            feed.Balls, feed.Strikes, feed.Outs,
+            feed.RunnerOnFirst is not null, feed.RunnerOnSecond is not null, feed.RunnerOnThird is not null);
+
+        if (isBreak)
+        {
+            // Flip any roster player currently active in this game to upcoming. Leaves
+            // substituted players alone (they're inactive, not active).
+            foreach (var id in _rosterPlayerIds)
+            {
+                if (_stateManager?.PlayerStates.GetValueOrDefault(id) is not PlayerState.Active active) continue;
+                if (active.Context.GamePk != gamePk) continue;
+                _stateManager.Update(id, new PlayerState.Upcoming(game.StartTime));
+            }
+        }
+        else
+        {
+            // Check current batter - only track if rostered as a hitter.
+            if (feed.CurrentBatterId is { } batterId
+                && _rosterPlayers.TryGetValue(batterId, out var batter)
+                && batter.IsHitter)
+            {
+                _stateManager?.Update(batterId, new PlayerState.Active(MakeContext(PlayerState.ActiveRole.Batting)));
+            }
+
+            // Check current pitcher - only track if rostered as a pitcher.
+            if (feed.CurrentPitcherId is { } activePitcherId
+                && _rosterPlayers.TryGetValue(activePitcherId, out var activePitcher)
+                && activePitcher.IsPitcher)
+            {
+                _stateManager?.Update(
+                    activePitcherId, new PlayerState.Active(MakeContext(PlayerState.ActiveRole.Pitching)));
+            }
+        }
+
+        // Check if the previous batter from our roster is no longer active. Only revert if
+        // they were actually a hitter - pitcher-only roster players (e.g. Ohtani-P) can appear
+        // as the feed's current batter without being tracked.
+        if (_lastBatterId.GetValueOrDefault(gamePk) is { } prevBatter
+            && prevBatter != feed.CurrentBatterId
+            && _rosterPlayers.TryGetValue(prevBatter, out var prevBatterPlayer)
+            && prevBatterPlayer.IsHitter)
+        {
+            _stateManager?.Update(prevBatter, new PlayerState.Upcoming(game.StartTime));
+        }
+
+        // Track pitcher per team side and detect substitutions.
+        if (feed.CurrentPitcherId is { } pitcherId)
+        {
+            var isHome = feed.HomePitchers.Contains(pitcherId);
+            var sideMap = isHome ? _lastHomePitcherId : _lastAwayPitcherId;
+
+            if (sideMap.TryGetValue(gamePk, out var prev)
+                && prev != pitcherId
+                && _rosterPlayerIds.Contains(prev))
+            {
+                _stateManager?.Update(
+                    prev, new PlayerState.Inactive(new PlayerState.InactiveReason.Substituted(gamePk)));
+            }
+
+            sideMap[gamePk] = pitcherId;
+        }
+
+        // Revert pitcher to in-game when the half-inning changes (they're not on the mound).
+        if (_lastPitcherId.GetValueOrDefault(gamePk) is { } prevPitcher
+            && prevPitcher != feed.CurrentPitcherId
+            && _rosterPlayerIds.Contains(prevPitcher))
+        {
+            var currentState = _stateManager?.PlayerStates.GetValueOrDefault(prevPitcher);
+            if (currentState is not PlayerState.Inactive { Reason: PlayerState.InactiveReason.Substituted })
+            {
+                _stateManager?.Update(prevPitcher, new PlayerState.Upcoming(game.StartTime));
+            }
+        }
+
+        // Catch-all: check both sides using the last pitcher in each pitchers array (boxscore
+        // pitchers are ordered by appearance, last = current for that side). Any roster pitcher
+        // who pitched earlier but isn't the latest for their side has been substituted.
+        // Handles app restarts and missed transitions.
+        foreach (var pitchers in new[] { feed.HomePitchers, feed.AwayPitchers })
+        {
+            if (pitchers.Count == 0) continue;
+            var currentForSide = pitchers[^1];
+
+            foreach (var id in _rosterPlayerIds)
+            {
+                if (id == currentForSide) continue;
+                if (!pitchers.Contains(id)) continue;
+                if (feed.PlayerStats.GetValueOrDefault(id)?.Pitching?.Formatted is null) continue;
+                if (!_rosterPlayers.TryGetValue(id, out var player)) continue;
+                if (!player.IsPitcher || player.IsHitter) continue;
+
+                var currentState = _stateManager?.PlayerStates.GetValueOrDefault(id);
+                if (currentState is PlayerState.Inactive { Reason: PlayerState.InactiveReason.Substituted }) continue;
+                if (currentState is PlayerState.Active) continue;
+
+                _stateManager?.Update(
+                    id, new PlayerState.Inactive(new PlayerState.InactiveReason.Substituted(gamePk)));
+            }
+        }
+
+        // Store completed play results for notifications.
+        if (feed.IsPlayComplete && feed.LastPlayDescription is { } description)
+        {
+            if (feed.CurrentBatterId is { } completedBatter && _rosterPlayerIds.Contains(completedBatter))
+            {
+                LastPlayDescriptions[completedBatter] = description;
+            }
+
+            if (feed.CurrentPitcherId is { } completedPitcher && _rosterPlayerIds.Contains(completedPitcher))
+            {
+                LastPlayDescriptions[completedPitcher] = description;
+            }
+        }
+
+        _lastBatterId[gamePk] = feed.CurrentBatterId;
+        _lastPitcherId[gamePk] = feed.CurrentPitcherId;
+    }
+
+    private static string LastWord(string teamName)
+    {
+        var words = teamName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return words.Length > 0 ? words[^1] : teamName;
+    }
+
+    private static string FormatInning(LiveFeedData feed)
+    {
+        if (feed.Inning is not { } inning || feed.InningHalf is not { } half) return "";
+
+        var shortHalf = half == "Top" ? "Top" : "Bot";
+        return $"{shortHalf} {inning}";
+    }
 }
