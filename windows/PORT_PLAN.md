@@ -56,7 +56,7 @@ windows/
 │       ├── Notifications/         # ToastService.cs
 │       ├── System/                # SystemEventsWatcher.cs, StartupManager.cs
 │       ├── SettingsStore.cs       # JSON at %APPDATA%\onDeck\settings.json
-│       └── Assets/                # baseball .ico variants (see Open Questions)
+│       └── Assets/                # baseball .ico variants (see Decisions: Tabler ball-baseball)
 └── tests/
     └── OnDeck.Core.Tests/
         ├── Fixtures/              # translated from LiveFeedPatcherFixtures.swift
@@ -225,13 +225,13 @@ Each phase = one detailed plan, written at execution time with full TDD steps. E
 - [ ] Single exe runs on clean Windows 11 without .NET installed
 - [ ] Idle memory stable over a full game day (target ~100MB working set; self-contained WPF typically idles 80-120MB - a modest miss is not a bug)
 
-## Open Questions (resolve before/during Phase 0)
+## Decisions (formerly Open Questions - all resolved 2026-08-08)
 
-1. **Icon assets.** SF Symbols are Apple-licensed and cannot ship in a Windows app. Need a custom or openly-licensed baseball glyph rendered to multi-res .ico in white/dark/green. Decide source (draw one, or an open icon set e.g. Lucide/Tabler).
-2. **Architecture targets.** win-x64 only, or also publish win-arm64?
-3. **Launch at login.** The Mac app has no login-item code (users add manually). Include the HKCU Run-key toggle in Settings (Phase 10 assumes yes)?
-4. **App identity.** Display name ("On Deck"?), exe name, toast AUMID. Note: settings live under `%APPDATA%\onDeck\` - changing identity later orphans them.
-5. **Code signing.** An unsigned exe hits SmartScreen "Windows protected your PC" on other people's machines. Options: ship unsigned with a "More info → Run anyway" note, buy a code-signing cert, or distribute via winget/MSIX later. Fine to defer past Phase 11, but decide before handing the exe to league-mates.
+1. **Icon assets:** Tabler Icons `ball-baseball` (MIT license). Recolor to white/dark/green and render to multi-res .ico (16/20/24/32) in Phase 6. SF Symbols are Apple-licensed and stay macOS-only.
+2. **Architecture targets:** win-x64 only. ARM Windows runs it under x64 emulation; add a win-arm64 publish later only on demand.
+3. **Launch at login:** Settings toggle writing the HKCU Run key, **default off** (Phase 10 `StartupManager`).
+4. **App identity:** display name `onDeck`, `onDeck.exe`, toast AUMID `dev.bjc.onDeck` (matches the Mac bundle ID). Settings at `%APPDATA%\onDeck\`.
+5. **Code signing:** ship unsigned; recipients click "More info → Run anyway" once per download. Revisit (e.g. Azure Trusted Signing, ~$10/mo) only if distribution widens beyond league-mates.
 
 ## Resolved (deliberate deviations from macOS)
 
