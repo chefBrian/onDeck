@@ -264,9 +264,180 @@ public static class LiveFeedPatcher
         // Prefix-dispatched handlers (lineup arrays, player boxscore)
         if (TryApplyBoxscoreArrayPatch(op, feed)) return;
 
-        // Task 7 inserts the player-stats handler here.
+        if (TryApplyPlayerStatsPatch(op, feed)) return;
+
         // Task 8 inserts the decorative-prefix check and the unknown fallthrough here.
     }
+
+    // MARK: - Player stats patches
+
+    /// <summary>
+    /// Recognises paths like
+    /// <c>/liveData/boxscore/teams/&lt;side&gt;/players/ID&lt;n&gt;</c>,
+    /// <c>…/ID&lt;n&gt;/stats/batting</c> and <c>…/ID&lt;n&gt;/stats/batting/&lt;field&gt;</c>
+    /// (and the <c>/stats/pitching</c> equivalents).
+    /// </summary>
+    private static bool TryApplyPlayerStatsPatch(PatchOperation op, LiveFeedData feed)
+    {
+        string[] prefixes =
+        [
+            "/liveData/boxscore/teams/home/players/ID",
+            "/liveData/boxscore/teams/away/players/ID",
+        ];
+
+        foreach (var prefix in prefixes)
+        {
+            if (!op.Path.StartsWith(prefix, StringComparison.Ordinal)) continue;
+
+            var suffix = op.Path[prefix.Length..];
+            var slash = suffix.IndexOf('/');
+            var idText = slash >= 0 ? suffix[..slash] : suffix;
+            var rest = slash >= 0 ? suffix[slash..] : "";      // rest starts with "/"
+
+            if (!int.TryParse(idText, out var id)) return false;
+
+            // Full player add (new player enters game)
+            if (op.Op == "add" && rest.Length == 0)
+            {
+                if (DecodePlayerStats(op.Value) is { } stats) feed.PlayerStats[id] = stats;
+                return true;
+            }
+
+            if (op.Op == "remove" && rest.Length == 0)
+            {
+                feed.PlayerStats.Remove(id);
+                return true;
+            }
+
+            if (rest == "/stats/batting")
+            {
+                var entry = GetOrCreate(feed, id);
+                if (op.Value is { ValueKind: JsonValueKind.Object } batting) entry.Batting = DecodeBatting(batting);
+                else if (op.Op == "remove") entry.Batting = null;
+                return true;
+            }
+
+            if (rest == "/stats/pitching")
+            {
+                var entry = GetOrCreate(feed, id);
+                if (op.Value is { ValueKind: JsonValueKind.Object } pitching) entry.Pitching = DecodePitching(pitching);
+                else if (op.Op == "remove") entry.Pitching = null;
+                return true;
+            }
+
+            if (rest.StartsWith("/stats/batting/", StringComparison.Ordinal))
+            {
+                var entry = GetOrCreate(feed, id);
+                entry.Batting ??= new PlayerBattingStats();
+                ApplyBattingField(rest["/stats/batting/".Length..], op, entry.Batting);
+                return true;
+            }
+
+            if (rest.StartsWith("/stats/pitching/", StringComparison.Ordinal))
+            {
+                var entry = GetOrCreate(feed, id);
+                entry.Pitching ??= new PlayerPitchingStats();
+                ApplyPitchingField(rest["/stats/pitching/".Length..], op, entry.Pitching);
+                return true;
+            }
+
+            // Other player subtrees (person, position, seasonStats, ...) - not modeled
+            return false;
+        }
+
+        return false;
+    }
+
+    private static PlayerGameStats GetOrCreate(LiveFeedData feed, int id)
+    {
+        if (!feed.PlayerStats.TryGetValue(id, out var entry))
+        {
+            entry = new PlayerGameStats();
+            feed.PlayerStats[id] = entry;
+        }
+
+        return entry;
+    }
+
+    private static void ApplyBattingField(string field, PatchOperation op, PlayerBattingStats batting)
+    {
+        var n = op.Op == "remove" ? null : IntValue(op.Value);
+
+        switch (field)
+        {
+            case "atBats": batting.AtBats = n; break;
+            case "hits": batting.Hits = n; break;
+            case "runs": batting.Runs = n; break;
+            case "doubles": batting.Doubles = n; break;
+            case "triples": batting.Triples = n; break;
+            case "homeRuns": batting.HomeRuns = n; break;
+            case "rbi": batting.Rbi = n; break;
+            case "baseOnBalls": batting.BaseOnBalls = n; break;
+            case "strikeOuts": batting.StrikeOuts = n; break;
+            case "stolenBases": batting.StolenBases = n; break;
+            default: break;   // Decorative batting field - ignored.
+        }
+    }
+
+    private static void ApplyPitchingField(string field, PatchOperation op, PlayerPitchingStats pitching)
+    {
+        var isRemove = op.Op == "remove";
+
+        switch (field)
+        {
+            case "inningsPitched": pitching.InningsPitched = isRemove ? null : StringValue(op.Value); break;
+            case "hits": pitching.Hits = isRemove ? null : IntValue(op.Value); break;
+            case "earnedRuns": pitching.EarnedRuns = isRemove ? null : IntValue(op.Value); break;
+            case "strikeOuts": pitching.StrikeOuts = isRemove ? null : IntValue(op.Value); break;
+            case "baseOnBalls": pitching.BaseOnBalls = isRemove ? null : IntValue(op.Value); break;
+            case "numberOfPitches": pitching.NumberOfPitches = isRemove ? null : IntValue(op.Value); break;
+            default: break;   // Decorative pitching field - ignored.
+        }
+    }
+
+    private static PlayerGameStats? DecodePlayerStats(JsonElement? value)
+    {
+        if (value is not { ValueKind: JsonValueKind.Object } player) return null;
+        if (!player.TryGetProperty("stats", out var stats) || stats.ValueKind != JsonValueKind.Object) return null;
+
+        var batting = stats.TryGetProperty("batting", out var b) && b.ValueKind == JsonValueKind.Object
+            ? DecodeBatting(b)
+            : null;
+        var pitching = stats.TryGetProperty("pitching", out var p) && p.ValueKind == JsonValueKind.Object
+            ? DecodePitching(p)
+            : null;
+
+        if (batting is null && pitching is null) return null;
+
+        return new PlayerGameStats { Batting = batting, Pitching = pitching };
+    }
+
+    private static PlayerBattingStats DecodeBatting(JsonElement d) => new()
+    {
+        AtBats = Field(d, "atBats"),
+        Hits = Field(d, "hits"),
+        Runs = Field(d, "runs"),
+        Doubles = Field(d, "doubles"),
+        Triples = Field(d, "triples"),
+        HomeRuns = Field(d, "homeRuns"),
+        Rbi = Field(d, "rbi"),
+        BaseOnBalls = Field(d, "baseOnBalls"),
+        StrikeOuts = Field(d, "strikeOuts"),
+        StolenBases = Field(d, "stolenBases"),
+    };
+
+    private static PlayerPitchingStats DecodePitching(JsonElement d) => new()
+    {
+        InningsPitched = d.TryGetProperty("inningsPitched", out var ip) ? StringValue(ip) : null,
+        Hits = Field(d, "hits"),
+        EarnedRuns = Field(d, "earnedRuns"),
+        StrikeOuts = Field(d, "strikeOuts"),
+        BaseOnBalls = Field(d, "baseOnBalls"),
+        NumberOfPitches = Field(d, "numberOfPitches"),
+    };
+
+    private static int? Field(JsonElement d, string name) =>
+        d.TryGetProperty(name, out var element) ? IntValue(element) : null;
 
     // MARK: - Boxscore array patches (batting orders, pitcher lists)
 
