@@ -23,6 +23,7 @@ public sealed class AppOrchestrator
     private readonly INotificationSink _notifications;
     private readonly TimeProvider _time;
     private readonly SynchronizationContext? _context;
+    private readonly HashSet<int> _notifiedNotInLineup = [];
 
     private IReadOnlyList<Game> _games = [];
     private bool _hasStarted;
@@ -56,6 +57,7 @@ public sealed class AppOrchestrator
         _monitor.Configure(_states);
         _states.OnStateChange = HandleStateChange;
         _monitor.OnGameStart = HandleGameStart;
+        _monitor.OnLineupUpdate = gamePk => RunGuarded(() => ReconcileLineupNotificationsAsync(gamePk));
 
         // Swift does this in RosterManager.init; the C# port made it explicit.
         _roster.LoadCachedRoster();
@@ -219,6 +221,7 @@ public sealed class AppOrchestrator
         _games = _schedule.TodaysGames;
 
         _states.Reset();
+        _notifiedNotInLineup.Clear();
         InitializePlayerStates();
 
         _monitor.StopMonitoring();
@@ -244,6 +247,7 @@ public sealed class AppOrchestrator
                 || lineup.AwayPitchers.Count > 0)
             {
                 _monitor.LineupPlayerIds[game.Id] = lineup;
+                await ReconcileLineupNotificationsAsync(game.Id);
             }
         }
 
@@ -401,6 +405,45 @@ public sealed class AppOrchestrator
             StreamUrl = game is null ? null : StreamLinkRouter.Url(game),
             SortKey = DisplayRules.InGameSortKey(player, game, feed, lineup, proximity),
         };
+    }
+
+    /// <summary>
+    /// Fires a one-shot "not in lineup" notification for active-roster hitters whose team is
+    /// playing in the given game but who are not on the posted lineup card.
+    /// </summary>
+    private async Task ReconcileLineupNotificationsAsync(int gamePk)
+    {
+        if (_games.FirstOrDefault(candidate => candidate.Id == gamePk) is not { } game) return;
+        if (!_monitor.LineupPlayerIds.TryGetValue(gamePk, out var lineup)) return;
+
+        // Don't notify once the game has started - too late to act on a bench swap. Prefer
+        // live feed state when available, otherwise fall back to the scheduled start.
+        if (_monitor.LatestFeeds.TryGetValue(gamePk, out var feed))
+        {
+            if (feed.GameState is "Live" or "Final") return;
+        }
+        else if (game.StartTime <= _time.GetUtcNow())
+        {
+            return;
+        }
+
+        var fantraxUrl = Uri.TryCreate(RosterUrl, UriKind.Absolute, out var parsed) ? parsed : null;
+        var matchup = $"{game.AwayTeam} @ {game.HomeTeam}";
+
+        // RosterManager replaces Players wholesale rather than mutating, so this enumerator
+        // holds the snapshot taken before the await - matching Swift's array value semantics.
+        foreach (var player in _roster.Players)
+        {
+            if (player.RosterStatus != RosterStatus.Active) continue;
+            if (_notifiedNotInLineup.Contains(player.Id)) continue;
+            if (game.SideFor(player) is not { } side) continue;
+            if (!lineup.Excludes(player, side)) continue;
+
+            _notifiedNotInLineup.Add(player.Id);
+
+            await _notifications.NotifyNotInLineupAsync(
+                player.Name, player.Id, gamePk, matchup, fantraxUrl);
+        }
     }
 
     // MARK: - Change handling
