@@ -1,5 +1,6 @@
 using OnDeck.Core.Models;
 using OnDeck.Core.Networking;
+using OnDeck.Core.Utilities;
 
 namespace OnDeck.Core.Managers;
 
@@ -276,6 +277,80 @@ public sealed class GameMonitor(MlbStatsApi mlb, TimeProvider? timeProvider = nu
         return delay > TimeSpan.Zero ? delay : TimeSpan.Zero;
     }
 
-    // Task 7 adds PollSingleGameAsync.
-    private Task PollSingleGameAsync(int gamePk, Game game, CancellationToken ct) => Task.CompletedTask;
+    internal async Task PollSingleGameAsync(int gamePk, Game game, CancellationToken ct)
+    {
+        try
+        {
+            LiveFeedData feed;
+
+            if (LatestFeeds.TryGetValue(gamePk, out var existing) && existing.TimeStamp is { } timecode)
+            {
+                var result = await mlb.FetchDiffPatchAsync(gamePk, timecode, ct);
+
+                switch (result)
+                {
+                    case DiffPatchResult.NoChanges:
+                        return;
+
+                    case DiffPatchResult.Patches patches:
+                        feed = LiveFeedPatcher.Apply(patches.Operations, existing);
+                        LatestFeeds[gamePk] = feed;
+                        break;
+
+                    case DiffPatchResult.FullUpdate full:
+                        feed = LiveFeedDecoder.Decode(full.Json);
+                        LatestFeeds[gamePk] = feed;
+                        break;
+
+                    default:
+                        return;
+                }
+            }
+            else
+            {
+                // No seed - full fetch.
+                feed = await mlb.FetchLiveFeedAsync(gamePk, ct);
+                LatestFeeds[gamePk] = feed;
+            }
+
+            ProcessFeed(feed, gamePk, game);
+
+            if (feed.GameState != "Final") return;
+
+            // Postponed carries gameState "Final" but has no stats - marking players gameOver
+            // would filter them out of the UI entirely (the Done section requires a stat
+            // line). Leave them in .upcoming so the UPCOMING row's red X icon and "PPD" label
+            // stay visible until the next day's refresh.
+            if (feed.DetailedState == "Postponed")
+            {
+                StopMonitoring(gamePk);
+                return;
+            }
+
+            var playerIdsInGame = _rosterPlayerIds.Where(id => IsPlayerInGame(id, game)).ToArray();
+            _stateManager?.SetGameOver(playerIdsInGame, gamePk);
+            StopMonitoring(gamePk);
+        }
+        catch (Exception)
+        {
+            // Transient error - preserve the last-known feed for UI continuity, but null its
+            // timestamp so the next cycle does a full fetch.
+            if (LatestFeeds.TryGetValue(gamePk, out var stale)) stale.TimeStamp = null;
+        }
+    }
+
+    // MARK: - Helpers
+
+    private bool IsPlayerInGame(int playerId, Game game)
+    {
+        if (!_rosterPlayers.TryGetValue(playerId, out var player)) return false;
+
+        return game.HomeTeam.Contains(player.Team, StringComparison.Ordinal)
+            || game.AwayTeam.Contains(player.Team, StringComparison.Ordinal)
+            || player.Team.Contains(game.HomeTeam, StringComparison.Ordinal)
+            || player.Team.Contains(game.AwayTeam, StringComparison.Ordinal);
+    }
+
+    // Task 8 adds ProcessFeed.
+    private void ProcessFeed(LiveFeedData feed, int gamePk, Game game) { }
 }

@@ -16,7 +16,9 @@ public sealed record PatchOperation(string Op, string Path, JsonElement? Value, 
         if (!element.TryGetProperty("op", out var op) || op.ValueKind != JsonValueKind.String) return null;
         if (!element.TryGetProperty("path", out var path) || path.ValueKind != JsonValueKind.String) return null;
 
-        var value = element.TryGetProperty("value", out var rawValue) ? rawValue : (JsonElement?)null;
+        // Clone detaches the value from its JsonDocument: callers routinely dispose the
+        // document (see MlbStatsApi.FetchDiffPatchAsync) while the ops outlive it.
+        var value = element.TryGetProperty("value", out var rawValue) ? rawValue.Clone() : (JsonElement?)null;
         var from = element.TryGetProperty("from", out var rawFrom) && rawFrom.ValueKind == JsonValueKind.String
             ? rawFrom.GetString()
             : null;

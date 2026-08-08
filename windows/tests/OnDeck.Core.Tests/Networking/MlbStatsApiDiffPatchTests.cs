@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Time.Testing;
 using OnDeck.Core.Networking;
 
@@ -92,6 +93,21 @@ public class MlbStatsApiDiffPatchTests
     {
         var (api, _) = Create("\"unexpected\"");
         Assert.IsType<DiffPatchResult.FullUpdate>(await api.FetchDiffPatchAsync(1, "t"));
+    }
+
+    [Fact]
+    public async Task FetchDiffPatchAsync_OpValuesOutliveTheParsedDocument()
+    {
+        // Regression: FetchDiffPatchAsync disposes its JsonDocument, so op values must be
+        // cloned out of it. Reading Value after the call previously returned garbage.
+        const string json = """[{"diff": [{"op": "replace", "path": "/a", "value": 42}]}]""";
+        var (api, _) = Create(json);
+
+        var result = Assert.IsType<DiffPatchResult.Patches>(await api.FetchDiffPatchAsync(1, "t"));
+
+        var op = Assert.Single(result.Operations);
+        Assert.Equal(JsonValueKind.Number, op.Value!.Value.ValueKind);
+        Assert.Equal(42, op.Value.Value.GetInt32());
     }
 
     [Fact]
