@@ -266,7 +266,18 @@ public static class LiveFeedPatcher
 
         if (TryApplyPlayerStatsPatch(op, feed)) return;
 
-        // Task 8 inserts the decorative-prefix check and the unknown fallthrough here.
+        // Nothing downstream consumes the result when there is no logger, so skip the scan.
+        if (logger is null) return;
+
+        // Known-decorative paths — silently skip without polluting the unknown-patch log.
+        // Paths that matter are caught by the specific cases above; everything matching a
+        // prefix here is a tree we deliberately don't model (heatmaps, pitch-by-pitch,
+        // historical plays, venue metadata, etc.). This check runs after the switch and both
+        // TryApply* handlers, so silencing a prefix cannot mask a real handler.
+        if (IsDecorative(op.Path)) return;
+
+        // Fallthrough: unknown op - log and skip
+        logger.Record(op.Op, op.Path, op.From, op.Value);
     }
 
     // MARK: - Player stats patches
@@ -438,6 +449,111 @@ public static class LiveFeedPatcher
 
     private static int? Field(JsonElement d, string name) =>
         d.TryGetProperty(name, out var element) ? IntValue(element) : null;
+
+    // MARK: - Decorative paths
+
+    /// <summary>
+    /// Path prefixes for subtrees the app deliberately doesn't model. Any patch whose path
+    /// matches one of these (exact, or followed by <c>/</c>) is dropped rather than logged as
+    /// unknown. Copied verbatim from <c>LiveFeedPatcher.swift:562-640</c>.
+    /// </summary>
+    private static readonly string[] DecorativePrefixes =
+    [
+        // currentPlay subtrees — matchup.batter/pitcher id+fullName, about.isComplete,
+        // result.event, result.description are all handled above.
+        "/liveData/plays/currentPlay/matchup/batterHotColdZone",
+        "/liveData/plays/currentPlay/matchup/batterHotColdZones",
+        "/liveData/plays/currentPlay/matchup/batterHotColdZoneStats",
+        "/liveData/plays/currentPlay/matchup/batSide",
+        "/liveData/plays/currentPlay/matchup/pitchHand",
+        "/liveData/plays/currentPlay/matchup/splits",
+        "/liveData/plays/currentPlay/matchup/postOnFirst",
+        "/liveData/plays/currentPlay/matchup/postOnSecond",
+        "/liveData/plays/currentPlay/matchup/postOnThird",
+        "/liveData/plays/currentPlay/matchup/batter/link",
+        "/liveData/plays/currentPlay/matchup/pitcher/link",
+        "/liveData/plays/currentPlay/playEvents",
+        "/liveData/plays/currentPlay/runners",
+        "/liveData/plays/currentPlay/runnerIndex",
+        "/liveData/plays/currentPlay/pitchIndex",
+        "/liveData/plays/currentPlay/actionIndex",
+        "/liveData/plays/currentPlay/about",
+        "/liveData/plays/currentPlay/result",
+        "/liveData/plays/currentPlay/count",
+        "/liveData/plays/currentPlay/atBatIndex",
+        "/liveData/plays/currentPlay/playEndTime",
+        // Historical plays — entire subtrees.
+        "/liveData/plays/allPlays",
+        "/liveData/plays/playsByInning",
+        "/liveData/plays/scoringPlays",
+        // Boxscore — battingOrder, pitchers arrays, and per-player stats handled via
+        // TryApplyBoxscoreArrayPatch / TryApplyPlayerStatsPatch above.
+        "/liveData/boxscore/topPerformers",
+        "/liveData/boxscore/info",
+        "/liveData/boxscore/pitchingNotes",
+        "/liveData/boxscore/teams/home/teamStats",
+        "/liveData/boxscore/teams/away/teamStats",
+        "/liveData/boxscore/teams/home/battingTotals",
+        "/liveData/boxscore/teams/away/battingTotals",
+        "/liveData/boxscore/teams/home/pitchingTotals",
+        "/liveData/boxscore/teams/away/pitchingTotals",
+        "/liveData/boxscore/teams/home/note",
+        "/liveData/boxscore/teams/away/note",
+        "/liveData/boxscore/teams/home/info",
+        "/liveData/boxscore/teams/away/info",
+        "/liveData/boxscore/teams/home/team",
+        "/liveData/boxscore/teams/away/team",
+        // Linescore — teams/*/runs, currentInning, inningHalf, inningState, balls, strikes,
+        // outs, and offense/{first,second,third} handled above.
+        "/liveData/linescore/defense",
+        "/liveData/linescore/offense/onDeck",
+        "/liveData/linescore/offense/inHole",
+        "/liveData/linescore/offense/batter",
+        "/liveData/linescore/offense/pitcher",
+        "/liveData/linescore/offense/team",
+        "/liveData/linescore/offense/battingOrder",
+        "/liveData/linescore/innings",
+        "/liveData/linescore/teams/home/hits",
+        "/liveData/linescore/teams/away/hits",
+        "/liveData/linescore/teams/home/errors",
+        "/liveData/linescore/teams/away/errors",
+        "/liveData/linescore/teams/home/leftOnBase",
+        "/liveData/linescore/teams/away/leftOnBase",
+        "/liveData/linescore/isTopInning",
+        "/liveData/linescore/currentInningOrdinal",
+        // metaData event streams we don't consume.
+        "/metaData/gameEvents",
+        "/metaData/logicalEvents",
+        // gameData — status.abstractGameState + status.detailedState handled above;
+        // everything else here is admin/narrative metadata.
+        "/gameData/absChallenges",
+        "/gameData/moundVisits",
+        "/gameData/review",
+        "/gameData/weather",
+        "/gameData/gameInfo",
+        "/gameData/status/statusCode",
+        "/gameData/status/reason",
+        "/gameData/status/codedGameState",
+        "/gameData/status/abstractGameCode",
+        "/gameData/players",
+    ];
+
+    private static bool IsDecorative(string path)
+    {
+        foreach (var prefix in DecorativePrefixes)
+        {
+            if (path == prefix) return true;
+
+            if (path.Length > prefix.Length
+                && path[prefix.Length] == '/'
+                && path.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     // MARK: - Boxscore array patches (batting orders, pitcher lists)
 

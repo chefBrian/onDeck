@@ -1,3 +1,6 @@
+using System.Text.Json;
+using OnDeck.Core.Utilities;
+
 namespace OnDeck.Core.Tests.Fixtures;
 
 /// <summary>
@@ -115,4 +118,38 @@ public static class LiveFeedPatcherFixtures
       }
     }
     """;
+
+    /// <summary>Scalar-leaf patches — the 75% case.</summary>
+    public static IReadOnlyList<PatchOperation> ScalarReplacesPatch { get; } = Parse("""
+        [
+          {"op": "replace", "path": "/metaData/timeStamp", "value": "20260416_180010"},
+          {"op": "add", "path": "/liveData/plays/currentPlay/result/event", "value": "Home Run"},
+          {"op": "add", "path": "/liveData/plays/currentPlay/result/description", "value": "Batter One hits a 2-run HR"},
+          {"op": "replace", "path": "/liveData/plays/currentPlay/about/isComplete", "value": true},
+          {"op": "replace", "path": "/liveData/plays/currentPlay/count/balls", "value": 3},
+          {"op": "replace", "path": "/liveData/plays/currentPlay/count/strikes", "value": 2},
+          {"op": "replace", "path": "/liveData/linescore/teams/away/runs", "value": 2},
+          {"op": "replace", "path": "/liveData/boxscore/teams/away/players/ID1/stats/batting/atBats", "value": 1},
+          {"op": "replace", "path": "/liveData/boxscore/teams/away/players/ID1/stats/batting/hits", "value": 1},
+          {"op": "replace", "path": "/liveData/boxscore/teams/away/players/ID1/stats/batting/homeRuns", "value": 1},
+          {"op": "replace", "path": "/liveData/boxscore/teams/away/players/ID1/stats/batting/rbi", "value": 2},
+          {"op": "replace", "path": "/liveData/boxscore/teams/away/players/ID1/stats/batting/runs", "value": 1},
+          {"op": "replace", "path": "/liveData/boxscore/teams/home/players/ID2/stats/pitching/hits", "value": 1},
+          {"op": "replace", "path": "/liveData/boxscore/teams/home/players/ID2/stats/pitching/earnedRuns", "value": 2},
+          {"op": "replace", "path": "/liveData/boxscore/teams/home/players/ID2/stats/pitching/numberOfPitches", "value": 6}
+        ]
+        """);
+
+    /// <summary><c>move</c> on offense — runner advance from first to second.</summary>
+    public static IReadOnlyList<PatchOperation> RunnerMoveFirstToSecondPatch { get; } = Parse("""
+        [{"op": "move", "from": "/liveData/linescore/offense/first", "path": "/liveData/linescore/offense/second"}]
+        """);
+
+    /// <summary>Decorative path — must be skipped, not throw.</summary>
+    public static IReadOnlyList<PatchOperation> DecorativePatch { get; } = Parse("""
+        [{"op": "replace", "path": "/liveData/plays/currentPlay/playEvents/0/details/code", "value": "F"}]
+        """);
+
+    private static IReadOnlyList<PatchOperation> Parse(string json) =>
+        PatchOperation.ParseArray(JsonDocument.Parse(json).RootElement.Clone());
 }
