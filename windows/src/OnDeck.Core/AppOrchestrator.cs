@@ -50,6 +50,8 @@ public sealed class AppOrchestrator
         _hideBenchPlayers = settings.HideBenchPlayers;
 
         _monitor.Configure(_states);
+        _states.OnStateChange = (_, _, _) => UpdatePlayerLists();
+        _monitor.OnGameStart = _ => UpdatePlayerLists();
 
         // Swift does this in RosterManager.init; the C# port made it explicit.
         _roster.LoadCachedRoster();
@@ -59,6 +61,36 @@ public sealed class AppOrchestrator
 
     /// <summary>Fired on the Core context whenever any published property changes.</summary>
     public event Action? StateChanged;
+
+    /// <summary>At bat or on the mound right now, in roster order.</summary>
+    public IReadOnlyList<PlayerDisplay> ActivePlayers { get; private set; } = [];
+
+    /// <summary>Game started, not currently active — pre-sorted per the MenuBarView rules.</summary>
+    public IReadOnlyList<PlayerDisplay> InGamePlayers { get; private set; } = [];
+
+    /// <summary>Game hasn't started, sorted by first pitch then name.</summary>
+    public IReadOnlyList<PlayerDisplay> UpcomingPlayers { get; private set; } = [];
+
+    /// <summary>Game over or substituted out, filtered to players with a matching stat line.</summary>
+    public IReadOnlyList<PlayerDisplay> DonePlayers { get; private set; } = [];
+
+    /// <summary>Drives the green tray icon.</summary>
+    public bool HasActivePlayers => ActivePlayers.Count > 0;
+
+    /// <summary>"A | B | C +2" — the tray tooltip.</summary>
+    public string MenuBarTitleText
+    {
+        get
+        {
+            var names = ActivePlayers.Select(display => display.Name).ToList();
+            return names.Count switch
+            {
+                0 => "",
+                <= 3 => string.Join(" | ", names),
+                _ => string.Join(" | ", names.Take(3)) + $" +{names.Count - 3}",
+            };
+        }
+    }
 
     public bool IsSyncing => _isSyncing || _roster.IsSyncing;
 
@@ -210,6 +242,11 @@ public sealed class AppOrchestrator
                 _monitor.LineupPlayerIds[game.Id] = lineup;
             }
         }
+
+        // InitializePlayerStates built the lists before the lineups above existed. On macOS the
+        // @Observable views just re-read GameMonitor at render time; here the rows are snapshots,
+        // so rebuild now that the badges can be resolved.
+        UpdatePlayerLists();
     }
 
     private void InitializePlayerStates()
@@ -242,6 +279,8 @@ public sealed class AppOrchestrator
             if (allGamePlayerIds.Contains(player.Id)) continue;
             _states.Update(player.Id, new PlayerState.Inactive(new PlayerState.InactiveReason.DayOff()));
         }
+
+        UpdatePlayerLists();
     }
 
     /// <summary>
@@ -257,4 +296,124 @@ public sealed class AppOrchestrator
     private Game? GameFor(Player player) => _games.FirstOrDefault(game => IsPlayerInGame(player, game));
 
     private CancellationToken Token => _lifetime?.Token ?? CancellationToken.None;
+
+    /// <summary>
+    /// Re-reads <see cref="ISettingsStore"/> and rebuilds the lists locally. The
+    /// <c>hideBenchPlayers</c> didSet analog — never touches the network.
+    /// </summary>
+    public void SettingsChanged()
+    {
+        _hideBenchPlayers = _settings.HideBenchPlayers;
+        UpdatePlayerLists();
+    }
+
+    // MARK: - List building
+
+    private void UpdatePlayerLists()
+    {
+        var active = new List<PlayerDisplay>();
+        var inGame = new List<PlayerDisplay>();
+        var upcoming = new List<PlayerDisplay>();
+        var done = new List<PlayerDisplay>();
+
+        foreach (var player in _roster.Players)
+        {
+            if (player.IsUnavailable) continue;
+            if (_hideBenchPlayers && player.IsOnBench) continue;
+
+            switch (_states.PlayerStates.GetValueOrDefault(player.Id))
+            {
+                case PlayerState.Active:
+                    active.Add(BuildLiveRow(player, isActive: true));
+                    break;
+
+                case PlayerState.Upcoming upcomingState:
+                    if (GameFor(player) is { } game && _monitor.IsLive(game.Id))
+                    {
+                        inGame.Add(BuildLiveRow(player, isActive: false));
+                    }
+                    else
+                    {
+                        upcoming.Add(BuildUpcomingRow(player, upcomingState.StartTime));
+                    }
+
+                    break;
+
+                case PlayerState.Inactive { Reason: PlayerState.InactiveReason.GameOver over }:
+                    AddDoneRow(done, player, over.GamePk);
+                    break;
+
+                case PlayerState.Inactive { Reason: PlayerState.InactiveReason.Substituted substituted }:
+                    AddDoneRow(done, player, substituted.GamePk);
+                    break;
+            }
+        }
+
+        ActivePlayers = active;
+        InGamePlayers = [.. inGame.OrderBy(display => display.SortKey)];
+        UpcomingPlayers =
+        [
+            .. upcoming
+                .OrderBy(display => display.StartTime ?? DateTimeOffset.MaxValue)
+                .ThenBy(display => display.Name, StringComparer.Ordinal)
+        ];
+        DonePlayers = [.. done.OrderBy(display => display.Player.IsHitter ? 0 : 1)];
+
+        StateChanged?.Invoke();
+    }
+
+    private void AddDoneRow(List<PlayerDisplay> done, Player player, int gamePk)
+    {
+        var feed = _monitor.LatestFeeds.GetValueOrDefault(gamePk);
+        if (DisplayRules.RawStatLine(player, feed) is not { } statLine) return;
+
+        done.Add(new PlayerDisplay
+        {
+            Player = player,
+            GamePk = gamePk,
+            Feed = feed,
+            StatLine = statLine,
+        });
+    }
+
+    private PlayerDisplay BuildLiveRow(Player player, bool isActive)
+    {
+        var game = GameFor(player);
+        var feed = game is null ? null : _monitor.LatestFeeds.GetValueOrDefault(game.Id);
+        var lineup = game is null ? null : _monitor.LineupPlayerIds.GetValueOrDefault(game.Id);
+        var proximity = DisplayRules.ProximityFor(player, feed);
+        var isInLineup = DisplayRules.IsInLineup(player, game, lineup);
+
+        return new PlayerDisplay
+        {
+            Player = player,
+            GamePk = game?.Id,
+            Feed = feed,
+            IsActive = isActive,
+            Proximity = proximity,
+            IsInLineup = isInLineup,
+            StatLine = game is null ? null : DisplayRules.LiveStatLine(player, feed, isInLineup, proximity),
+            Delay = DisplayRules.DelayFor(feed?.DetailedState),
+            StreamUrl = game is null ? null : StreamLinkRouter.Url(game),
+            SortKey = DisplayRules.InGameSortKey(player, game, feed, lineup, proximity),
+        };
+    }
+
+    private PlayerDisplay BuildUpcomingRow(Player player, DateTimeOffset startTime)
+    {
+        var game = GameFor(player);
+        var feed = game is null ? null : _monitor.LatestFeeds.GetValueOrDefault(game.Id);
+        var lineup = game is null ? null : _monitor.LineupPlayerIds.GetValueOrDefault(game.Id);
+
+        return new PlayerDisplay
+        {
+            Player = player,
+            GamePk = game?.Id,
+            Feed = feed,
+            Lineup = DisplayRules.LineupInfoFor(player, game, lineup, feed),
+            Delay = DisplayRules.DelayFor(feed?.DetailedState),
+            StartTime = startTime,
+            StreamUrl = game is null ? null : StreamLinkRouter.Url(game),
+        };
+    }
 }
