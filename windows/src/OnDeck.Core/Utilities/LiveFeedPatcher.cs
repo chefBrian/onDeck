@@ -261,8 +261,78 @@ public static class LiveFeedPatcher
                 break;
         }
 
-        // Task 6 and 7 insert the prefix-dispatched handlers here.
+        // Prefix-dispatched handlers (lineup arrays, player boxscore)
+        if (TryApplyBoxscoreArrayPatch(op, feed)) return;
+
+        // Task 7 inserts the player-stats handler here.
         // Task 8 inserts the decorative-prefix check and the unknown fallthrough here.
+    }
+
+    // MARK: - Boxscore array patches (batting orders, pitcher lists)
+
+    private static bool TryApplyBoxscoreArrayPatch(PatchOperation op, LiveFeedData feed)
+    {
+        (string Side, string Key, Func<LiveFeedData, List<int>> Select)[] targets =
+        [
+            ("home", "battingOrder", f => f.HomeBattingOrder),
+            ("away", "battingOrder", f => f.AwayBattingOrder),
+            ("home", "pitchers", f => f.HomePitchers),
+            ("away", "pitchers", f => f.AwayPitchers),
+        ];
+
+        foreach (var (side, key, select) in targets)
+        {
+            var basePath = $"/liveData/boxscore/teams/{side}/{key}";
+
+            if (op.Path == basePath)
+            {
+                if (op.Value is { ValueKind: JsonValueKind.Array } array)
+                {
+                    var list = select(feed);
+                    list.Clear();
+                    foreach (var element in array.EnumerateArray())
+                    {
+                        if (IntValue(element) is { } n) list.Add(n);
+                    }
+                }
+                return true;
+            }
+
+            if (!op.Path.StartsWith(basePath + "/", StringComparison.Ordinal)) continue;
+
+            var suffix = op.Path[(basePath.Length + 1)..];
+
+            // An unparseable append is not a missing handler, so "-" always counts as handled.
+            if (suffix == "-")
+            {
+                if (op.Op == "add" && IntValue(op.Value) is { } appended) select(feed).Add(appended);
+                return true;
+            }
+
+            if (!int.TryParse(suffix, out var index)) continue;
+
+            var target = select(feed);
+            switch (op.Op)
+            {
+                case "replace":
+                    if (index < target.Count && IntValue(op.Value) is { } replacement) target[index] = replacement;
+                    return true;
+                case "add":
+                    if (IntValue(op.Value) is { } inserted)
+                    {
+                        if (index <= target.Count) target.Insert(index, inserted);
+                        else target.Add(inserted);
+                    }
+                    return true;
+                case "remove":
+                    if (index < target.Count) target.RemoveAt(index);
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        return false;
     }
 
     // MARK: - Helpers
