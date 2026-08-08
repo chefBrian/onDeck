@@ -1637,3 +1637,4 @@ git commit -m "phase 1: port StreamLinkRouter"
 6. **`PlayerPosition` and `RosterStatus` are namespace-level, not nested in `Player`** — CS0102 forbids a nested type sharing a name with the `RosterStatus` property. See Task 2.
 7. **`windows/NuGet.config` added** (not in the original file structure). The machine-wide `NuGet.Config` has an empty `<packageSources>`, clearing the implicit nuget.org default and failing every restore with NU1100.
 8. **`dotnet new sln` produced `OnDeck.slnx`**, the .NET 10 default XML solution format, rather than `OnDeck.sln`. Kept as-is.
+9. **`StreamLinkRouter` Netflix URL gains a trailing slash.** .NET's `Uri` normalizes a bare authority (`https://www.netflix.com`) to `https://www.netflix.com/`; Swift's `URL` keeps the string verbatim. Same destination once handed to a browser — the only affected route is Netflix, since every other target already has a path.
