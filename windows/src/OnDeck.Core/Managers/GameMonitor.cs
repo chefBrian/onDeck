@@ -74,15 +74,26 @@ public sealed class GameMonitor(MlbStatsApi mlb, TimeProvider? timeProvider = nu
     /// </summary>
     public void StartMonitoring(IReadOnlyList<Game> games, IReadOnlyList<Player> players)
     {
+        TrackGames(games, players);
+
+        _coordinator = new CancellationTokenSource();
+        _coordinatorTask = CoordinatePollingAsync(_coordinator.Token);
+    }
+
+    /// <summary>
+    /// Resets tracking state for a new set of games without launching the coordinator.
+    /// <see cref="StartMonitoring"/> is this plus the polling loop; tests use it directly to
+    /// exercise <see cref="NextEventDelay"/> and <see cref="SelectGamesToPoll"/> without the
+    /// loop concurrently consuming milestones.
+    /// </summary>
+    internal void TrackGames(IReadOnlyList<Game> games, IReadOnlyList<Player> players)
+    {
         StopMonitoring();
 
         _rosterPlayerIds = [.. players.Select(p => p.Id)];
         _rosterPlayers = players.ToDictionary(p => p.Id);
         foreach (var game in games) _monitoredGames[game.Id] = game;
         IsMonitoring = true;
-
-        _coordinator = new CancellationTokenSource();
-        _coordinatorTask = CoordinatePollingAsync(_coordinator.Token);
     }
 
     public void StopMonitoring()
@@ -142,6 +153,129 @@ public sealed class GameMonitor(MlbStatsApi mlb, TimeProvider? timeProvider = nu
         _coordinatorTask = null;
     }
 
-    // Task 6 adds CoordinatePollingAsync, NextEventDelay and SelectGamesToPoll.
-    private Task CoordinatePollingAsync(CancellationToken ct) => Task.CompletedTask;
+    // MARK: - Centralized Polling
+
+    private async Task CoordinatePollingAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            var sleepDuration = NextEventDelay();
+            if (sleepDuration > TimeSpan.Zero)
+            {
+                try
+                {
+                    await Task.Delay(sleepDuration, _time, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+            }
+
+            await PollCycleAsync(ct);
+
+            // Once any game is in active polling range, switch to the 10s loop.
+            var hasActiveGames = _monitoredGames.Values.Any(
+                game => game.StartTime - ActiveWindow <= _time.GetUtcNow());
+
+            if (!hasActiveGames) continue;
+
+            try
+            {
+                await Task.Delay(PollInterval, _time, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
+    }
+
+    private async Task PollCycleAsync(CancellationToken ct)
+    {
+        var gamesToPoll = SelectGamesToPoll();
+        if (gamesToPoll.Count == 0) return;
+
+        await Task.WhenAll(gamesToPoll
+            .Where(_monitoredGames.ContainsKey)
+            .Select(gamePk => PollSingleGameAsync(gamePk, _monitoredGames[gamePk], ct)));
+    }
+
+    /// <summary>
+    /// Games due for a poll this cycle: everything inside the active window, plus any game
+    /// that has just crossed an uncompleted pre-game milestone. One cycle consumes at most
+    /// one milestone per game.
+    /// </summary>
+    internal IReadOnlyList<int> SelectGamesToPoll()
+    {
+        var now = _time.GetUtcNow();
+        var gamesToPoll = new List<int>();
+
+        // Active games: within 15 min of start - poll every cycle.
+        foreach (var (gamePk, game) in _monitoredGames)
+        {
+            if (game.StartTime - ActiveWindow <= now) gamesToPoll.Add(gamePk);
+        }
+
+        // Pre-game milestone checks: one-shot fetch when a milestone is reached.
+        foreach (var (gamePk, game) in _monitoredGames)
+        {
+            var timeUntilStart = game.StartTime - now;
+            if (timeUntilStart <= ActiveWindow) continue;   // already active
+
+            foreach (var milestone in PreGameMilestones)
+            {
+                if (timeUntilStart > milestone) continue;
+
+                if (!_completedMilestones.TryGetValue(gamePk, out var completed))
+                {
+                    completed = [];
+                    _completedMilestones[gamePk] = completed;
+                }
+
+                if (!completed.Add(milestone)) continue;
+
+                gamesToPoll.Add(gamePk);
+                break;
+            }
+        }
+
+        return gamesToPoll;
+    }
+
+    /// <summary>
+    /// Time until the next event (milestone or active polling window).
+    /// <see cref="TimeSpan.Zero"/> when an event is ready now.
+    /// </summary>
+    internal TimeSpan NextEventDelay()
+    {
+        var now = _time.GetUtcNow();
+        DateTimeOffset? nextTime = null;
+
+        foreach (var game in _monitoredGames.Values)
+        {
+            // Active polling starts 15 min before the game.
+            var activeStart = game.StartTime - ActiveWindow;
+            if (activeStart <= now) return TimeSpan.Zero;
+
+            _completedMilestones.TryGetValue(game.Id, out var completed);
+
+            foreach (var milestone in PreGameMilestones)
+            {
+                var milestoneTime = game.StartTime - milestone;
+                if (milestoneTime <= now && !(completed?.Contains(milestone) ?? false)) return TimeSpan.Zero;
+                if (milestoneTime > now && (nextTime is null || milestoneTime < nextTime)) nextTime = milestoneTime;
+            }
+
+            if (nextTime is null || activeStart < nextTime) nextTime = activeStart;
+        }
+
+        if (nextTime is not { } next) return TimeSpan.Zero;
+
+        var delay = next - now;
+        return delay > TimeSpan.Zero ? delay : TimeSpan.Zero;
+    }
+
+    // Task 7 adds PollSingleGameAsync.
+    private Task PollSingleGameAsync(int gamePk, Game game, CancellationToken ct) => Task.CompletedTask;
 }

@@ -6,4 +6,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="OnDeck.Core.Tests" />
+  </ItemGroup>
+
 </Project>
