@@ -110,6 +110,41 @@ public sealed class MlbStatsApi(HttpClient http, TimeProvider timeProvider)
             [.. (game.Lineups?.AwayPlayers ?? []).Select(p => p.Id)]);
     }
 
+    // MARK: - Live Feed
+
+    /// <summary>Fetches the full live feed and returns parsed data.</summary>
+    public async Task<LiveFeedData> FetchLiveFeedAsync(int gamePk, CancellationToken ct = default)
+    {
+        var url = $"{BaseUrl}/v1.1/game/{gamePk}/feed/live";
+
+        using var response = await http.GetAsync(url, ct);
+        response.EnsureSuccessStatusCode();
+
+        var bytes = await response.Content.ReadAsByteArrayAsync(ct);
+        return LiveFeedDecoder.Decode(bytes);
+    }
+
+    // MARK: - Game Changes
+
+    /// <summary>Returns the set of gamePks that have been updated since <paramref name="since"/>.</summary>
+    public async Task<IReadOnlySet<int>> FetchGameChangesAsync(
+        DateTimeOffset since, CancellationToken ct = default)
+    {
+        var timestamp = since.ToUniversalTime()
+            .ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+        var url = $"{BaseUrl}/v1/game/changes?updatedSince={Uri.EscapeDataString(timestamp)}&sportId=1";
+
+        var response = await GetJsonAsync<GameChangesResponse>(url, ct);
+
+        var gamePks = new HashSet<int>();
+        foreach (var date in response.Dates ?? [])
+        {
+            foreach (var game in date.Games ?? []) gamePks.Add(game.GamePk);
+        }
+
+        return gamePks;
+    }
+
     private async Task<T> GetJsonAsync<T>(string url, CancellationToken ct)
     {
         using var response = await http.GetAsync(url, ct);
@@ -205,5 +240,22 @@ public sealed class MlbStatsApi(HttpClient http, TimeProvider timeProvider)
     private sealed class ScheduleLineupPlayer
     {
         public int Id { get; set; }
+    }
+
+    // --- Game changes DTOs
+
+    private sealed class GameChangesResponse
+    {
+        public List<GameChangesDate>? Dates { get; set; }
+    }
+
+    private sealed class GameChangesDate
+    {
+        public List<GameChangesGame>? Games { get; set; }
+    }
+
+    private sealed class GameChangesGame
+    {
+        public int GamePk { get; set; }
     }
 }
