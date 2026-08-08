@@ -152,10 +152,15 @@ git commit -m "phase 0: scaffold windows solution (Core, App, tests)"
 **Interfaces:**
 - Consumes: nothing.
 - Produces:
-  - `OnDeck.Core.Models.Player` — `sealed record Player(int Id, string Name, string Team, IReadOnlySet<Player.PlayerPosition> Positions, IReadOnlySet<string> FantraxPositions, Player.RosterStatus RosterStatus)`
+  - `OnDeck.Core.Models.Player` — `sealed record Player(int Id, string Name, string Team, IReadOnlySet<PlayerPosition> Positions, IReadOnlySet<string> FantraxPositions, RosterStatus RosterStatus)`
   - Computed: `bool IsPitcher`, `bool IsHitter`, `bool IsOnBench`, `bool IsUnavailable`, `bool IsStartingPitcherOnly`
-  - Nested `enum Player.PlayerPosition { Hitter, Pitcher }`
-  - Nested `enum Player.RosterStatus { Active = 1, Reserve = 2, InjuredReserve = 3, Minors = 9 }` — values are the Fantrax `statusId` wire values, do not renumber.
+  - `enum PlayerPosition { Hitter, Pitcher }` — namespace level, **not** nested in `Player`
+  - `enum RosterStatus { Active = 1, Reserve = 2, InjuredReserve = 3, Minors = 9 }` — namespace level; values are the Fantrax `statusId` wire values, do not renumber.
+
+  Swift nests both in `Player`. C# cannot: the record already exposes a `RosterStatus`
+  property and CS0102 forbids a nested type of the same name (Swift is fine because
+  `rosterStatus` differs from `RosterStatus` by case). The property names win — they are
+  what the rest of the port and the parity checklist read — so the enums move out.
   - Structural equality: `Positions`/`FantraxPositions` compared with `SetEquals`, not reference identity.
 
 - [ ] **Step 1: Delete the template test and write the failing test**
@@ -170,45 +175,45 @@ namespace OnDeck.Core.Tests.Models;
 public class PlayerTests
 {
     private static Player Make(
-        Player.PlayerPosition[] positions,
+        PlayerPosition[] positions,
         string[] fantraxPositions,
-        Player.RosterStatus status = Player.RosterStatus.Active) =>
+        RosterStatus status = RosterStatus.Active) =>
         new(660271, "Shohei Ohtani", "LAD",
-            new HashSet<Player.PlayerPosition>(positions),
+            new HashSet<PlayerPosition>(positions),
             new HashSet<string>(fantraxPositions),
             status);
 
     [Fact]
     public void IsPitcher_TrueWhenPositionsContainPitcher()
     {
-        Assert.True(Make([Player.PlayerPosition.Pitcher], ["SP"]).IsPitcher);
-        Assert.False(Make([Player.PlayerPosition.Hitter], ["DH"]).IsPitcher);
+        Assert.True(Make([PlayerPosition.Pitcher], ["SP"]).IsPitcher);
+        Assert.False(Make([PlayerPosition.Hitter], ["DH"]).IsPitcher);
     }
 
     [Fact]
     public void IsHitter_TrueWhenPositionsContainHitter()
     {
-        Assert.True(Make([Player.PlayerPosition.Hitter], ["DH"]).IsHitter);
-        Assert.False(Make([Player.PlayerPosition.Pitcher], ["SP"]).IsHitter);
+        Assert.True(Make([PlayerPosition.Hitter], ["DH"]).IsHitter);
+        Assert.False(Make([PlayerPosition.Pitcher], ["SP"]).IsHitter);
     }
 
     [Fact]
     public void TwoWayPlayer_IsBothPitcherAndHitter()
     {
-        var ohtani = Make([Player.PlayerPosition.Hitter, Player.PlayerPosition.Pitcher], ["SP", "DH"]);
+        var ohtani = Make([PlayerPosition.Hitter, PlayerPosition.Pitcher], ["SP", "DH"]);
         Assert.True(ohtani.IsPitcher);
         Assert.True(ohtani.IsHitter);
     }
 
     [Theory]
-    [InlineData(Player.RosterStatus.Active, false, false)]
-    [InlineData(Player.RosterStatus.Reserve, true, false)]
-    [InlineData(Player.RosterStatus.InjuredReserve, false, true)]
-    [InlineData(Player.RosterStatus.Minors, false, true)]
+    [InlineData(RosterStatus.Active, false, false)]
+    [InlineData(RosterStatus.Reserve, true, false)]
+    [InlineData(RosterStatus.InjuredReserve, false, true)]
+    [InlineData(RosterStatus.Minors, false, true)]
     public void RosterStatus_DrivesBenchAndUnavailable(
-        Player.RosterStatus status, bool expectedBench, bool expectedUnavailable)
+        RosterStatus status, bool expectedBench, bool expectedUnavailable)
     {
-        var player = Make([Player.PlayerPosition.Hitter], ["OF"], status);
+        var player = Make([PlayerPosition.Hitter], ["OF"], status);
         Assert.Equal(expectedBench, player.IsOnBench);
         Assert.Equal(expectedUnavailable, player.IsUnavailable);
     }
@@ -216,42 +221,42 @@ public class PlayerTests
     [Fact]
     public void RosterStatus_WireValuesMatchFantraxStatusIds()
     {
-        Assert.Equal(1, (int)Player.RosterStatus.Active);
-        Assert.Equal(2, (int)Player.RosterStatus.Reserve);
-        Assert.Equal(3, (int)Player.RosterStatus.InjuredReserve);
-        Assert.Equal(9, (int)Player.RosterStatus.Minors);
+        Assert.Equal(1, (int)RosterStatus.Active);
+        Assert.Equal(2, (int)RosterStatus.Reserve);
+        Assert.Equal(3, (int)RosterStatus.InjuredReserve);
+        Assert.Equal(9, (int)RosterStatus.Minors);
     }
 
     [Fact]
     public void IsStartingPitcherOnly_TrueForSpWithoutRpAndNotHitter()
     {
-        Assert.True(Make([Player.PlayerPosition.Pitcher], ["SP"]).IsStartingPitcherOnly);
+        Assert.True(Make([PlayerPosition.Pitcher], ["SP"]).IsStartingPitcherOnly);
     }
 
     [Fact]
     public void IsStartingPitcherOnly_FalseWhenAlsoReliever()
     {
-        Assert.False(Make([Player.PlayerPosition.Pitcher], ["SP", "RP"]).IsStartingPitcherOnly);
+        Assert.False(Make([PlayerPosition.Pitcher], ["SP", "RP"]).IsStartingPitcherOnly);
     }
 
     [Fact]
     public void IsStartingPitcherOnly_FalseForTwoWayPlayer()
     {
-        Assert.False(Make([Player.PlayerPosition.Hitter, Player.PlayerPosition.Pitcher], ["SP", "DH"])
+        Assert.False(Make([PlayerPosition.Hitter, PlayerPosition.Pitcher], ["SP", "DH"])
             .IsStartingPitcherOnly);
     }
 
     [Fact]
     public void IsStartingPitcherOnly_FalseForRelieverOnly()
     {
-        Assert.False(Make([Player.PlayerPosition.Pitcher], ["RP"]).IsStartingPitcherOnly);
+        Assert.False(Make([PlayerPosition.Pitcher], ["RP"]).IsStartingPitcherOnly);
     }
 
     [Fact]
     public void Equality_IsStructuralAcrossDistinctSetInstances()
     {
-        var a = Make([Player.PlayerPosition.Hitter], ["OF", "DH"]);
-        var b = Make([Player.PlayerPosition.Hitter], ["DH", "OF"]);
+        var a = Make([PlayerPosition.Hitter], ["OF", "DH"]);
+        var b = Make([PlayerPosition.Hitter], ["DH", "OF"]);
         Assert.Equal(a, b);
         Assert.Equal(a.GetHashCode(), b.GetHashCode());
     }
@@ -259,8 +264,8 @@ public class PlayerTests
     [Fact]
     public void Equality_DistinguishesDifferentFantraxPositions()
     {
-        var a = Make([Player.PlayerPosition.Pitcher], ["SP"]);
-        var b = Make([Player.PlayerPosition.Pitcher], ["RP"]);
+        var a = Make([PlayerPosition.Pitcher], ["SP"]);
+        var b = Make([PlayerPosition.Pitcher], ["RP"]);
         Assert.NotEqual(a, b);
     }
 }
@@ -279,37 +284,42 @@ Expected: compile error — `Player` does not exist.
 ```csharp
 namespace OnDeck.Core.Models;
 
+/// <summary>
+/// Swift nests these in <c>Player</c>, which C# cannot do: the record already has a
+/// <c>RosterStatus</c> property and CS0102 forbids a nested type of the same name
+/// (Swift gets away with it because <c>rosterStatus</c> differs from <c>RosterStatus</c>
+/// by case). The property names win, since those are what the rest of the port reads.
+/// </summary>
+public enum PlayerPosition
+{
+    Hitter,
+    Pitcher,
+}
+
+/// <summary>Values are Fantrax <c>statusId</c> wire values — do not renumber.</summary>
+public enum RosterStatus
+{
+    Active = 1,
+    Reserve = 2,
+    InjuredReserve = 3,
+    Minors = 9,
+}
+
 /// <summary>Port of <c>Models/Player.swift</c>.</summary>
 public sealed record Player(
     int Id,                                     // MLB player ID
     string Name,
     string Team,
-    IReadOnlySet<Player.PlayerPosition> Positions,
+    IReadOnlySet<PlayerPosition> Positions,
     IReadOnlySet<string> FantraxPositions,      // original Fantrax codes, e.g. "SP", "RP", "C"
-    Player.RosterStatus RosterStatus)
+    RosterStatus RosterStatus)
 {
     public bool IsPitcher => Positions.Contains(PlayerPosition.Pitcher);
     public bool IsHitter => Positions.Contains(PlayerPosition.Hitter);
-    public bool IsOnBench => RosterStatus == Player.RosterStatus.Reserve;
-    public bool IsUnavailable =>
-        RosterStatus is Player.RosterStatus.InjuredReserve or Player.RosterStatus.Minors;
+    public bool IsOnBench => RosterStatus == RosterStatus.Reserve;
+    public bool IsUnavailable => RosterStatus is RosterStatus.InjuredReserve or RosterStatus.Minors;
     public bool IsStartingPitcherOnly =>
         FantraxPositions.Contains("SP") && !FantraxPositions.Contains("RP") && !IsHitter;
-
-    public enum PlayerPosition
-    {
-        Hitter,
-        Pitcher,
-    }
-
-    /// <summary>Values are Fantrax <c>statusId</c> wire values — do not renumber.</summary>
-    public enum RosterStatus
-    {
-        Active = 1,
-        Reserve = 2,
-        InjuredReserve = 3,
-        Minors = 9,
-    }
 
     // The compiler-generated record equality would compare the two set members by
     // reference. Swift's Set has value semantics, so compare contents instead.
@@ -591,9 +601,9 @@ public class GameTests
 
     private static Player PlayerOn(string team) =>
         new(660271, "Shohei Ohtani", team,
-            new HashSet<Player.PlayerPosition> { Player.PlayerPosition.Hitter },
+            new HashSet<PlayerPosition> { PlayerPosition.Hitter },
             new HashSet<string> { "DH" },
-            Player.RosterStatus.Active);
+            RosterStatus.Active);
 
     [Fact]
     public void SideFor_MatchesHomeWhenFullNameContainsAbbreviation()
@@ -662,15 +672,15 @@ public class GameLineupTests
 
     private static Player Hitter(int id) =>
         new(id, "Hitter", "LAD",
-            new HashSet<Player.PlayerPosition> { Player.PlayerPosition.Hitter },
+            new HashSet<PlayerPosition> { PlayerPosition.Hitter },
             new HashSet<string> { "OF" },
-            Player.RosterStatus.Active);
+            RosterStatus.Active);
 
     private static Player Reliever(int id) =>
         new(id, "Reliever", "LAD",
-            new HashSet<Player.PlayerPosition> { Player.PlayerPosition.Pitcher },
+            new HashSet<PlayerPosition> { PlayerPosition.Pitcher },
             new HashSet<string> { "RP" },
-            Player.RosterStatus.Active);
+            RosterStatus.Active);
 
     [Fact]
     public void IsSubmitted_FalseWhenBattingCardEmpty()
@@ -1624,3 +1634,6 @@ git commit -m "phase 1: port StreamLinkRouter"
 3. **`Player` and `Game` implement structural equality by hand**, because C# records compare collection members by reference while Swift's `Set`/`Array` are value types.
 4. **`FantraxUrlParser` requires an absolute URI.** Swift's `URL(string:)` accepts relative strings, but every such input reaches the same `nil` result via the missing-league-ID guard, so behaviour is unchanged for real inputs.
 5. **Swift `Date` → C# `DateTimeOffset`** throughout.
+6. **`PlayerPosition` and `RosterStatus` are namespace-level, not nested in `Player`** — CS0102 forbids a nested type sharing a name with the `RosterStatus` property. See Task 2.
+7. **`windows/NuGet.config` added** (not in the original file structure). The machine-wide `NuGet.Config` has an empty `<packageSources>`, clearing the implicit nuget.org default and failing every restore with NU1100.
+8. **`dotnet new sln` produced `OnDeck.slnx`**, the .NET 10 default XML solution format, rather than `OnDeck.sln`. Kept as-is.
