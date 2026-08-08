@@ -158,9 +158,109 @@ public static class LiveFeedPatcher
             case ("add", "/liveData/linescore/outs"):
                 feed.Outs = IntValue(value) ?? feed.Outs;
                 return;
+
+            // --- linescore / offense - scalar runner IDs
+            case ("replace", "/liveData/linescore/offense/first/id"):
+            case ("add", "/liveData/linescore/offense/first/id"):
+                feed.RunnerOnFirst = IntValue(value);
+                return;
+            case ("replace", "/liveData/linescore/offense/second/id"):
+            case ("add", "/liveData/linescore/offense/second/id"):
+                feed.RunnerOnSecond = IntValue(value);
+                return;
+            case ("replace", "/liveData/linescore/offense/third/id"):
+            case ("add", "/liveData/linescore/offense/third/id"):
+                feed.RunnerOnThird = IntValue(value);
+                return;
+            case ("remove", "/liveData/linescore/offense/first"):
+            case ("remove", "/liveData/linescore/offense/first/id"):
+                feed.RunnerOnFirst = null;
+                return;
+            case ("remove", "/liveData/linescore/offense/second"):
+            case ("remove", "/liveData/linescore/offense/second/id"):
+                feed.RunnerOnSecond = null;
+                return;
+            case ("remove", "/liveData/linescore/offense/third"):
+            case ("remove", "/liveData/linescore/offense/third/id"):
+                feed.RunnerOnThird = null;
+                return;
+
+            // --- linescore / offense - whole-object add when a runner advances into an empty slot
+            // Server sends: {"op":"add","path":"/liveData/linescore/offense/second",
+            //                "value":{"id":N,"fullName":"...","link":"..."}}
+            case ("add", "/liveData/linescore/offense/first"):
+                feed.RunnerOnFirst = RunnerIdFromObject(value);
+                return;
+            case ("add", "/liveData/linescore/offense/second"):
+                feed.RunnerOnSecond = RunnerIdFromObject(value);
+                return;
+            case ("add", "/liveData/linescore/offense/third"):
+                feed.RunnerOnThird = RunnerIdFromObject(value);
+                return;
+
+            // --- linescore / offense - batter-reaches-base copy ops
+            // Server sends: {"op":"copy","path":"/liveData/linescore/offense/first",
+            //                "from":"/liveData/plays/allPlays/N/matchup/batter"}
+            // At this point in the patch batch, CurrentBatterId is still the batter who just
+            // reached base (the replace for the NEXT batter arrives in a later entry).
+            // Verified against real MLB diffPatch output on 2026-04-18.
+            case ("copy", "/liveData/linescore/offense/first"):
+                if (IsBatterFromPath(op.From)) feed.RunnerOnFirst = feed.CurrentBatterId;
+                else feed.TimeStamp = null;
+                return;
+            case ("copy", "/liveData/linescore/offense/second"):
+                if (IsBatterFromPath(op.From)) feed.RunnerOnSecond = feed.CurrentBatterId;
+                else feed.TimeStamp = null;
+                return;
+            case ("copy", "/liveData/linescore/offense/third"):
+                if (IsBatterFromPath(op.From)) feed.RunnerOnThird = feed.CurrentBatterId;
+                else feed.TimeStamp = null;
+                return;
+
+            // --- linescore / offense - decorative sub-paths on base slots (runner name/link).
+            // Explicit no-op cases rather than entries in the decorative table below, because
+            // /liveData/linescore/offense/first itself IS modeled (id + the copy/add handlers
+            // above) — only fullName and link under those slots get silenced.
+            case ("replace", "/liveData/linescore/offense/first/fullName"):
+            case ("add", "/liveData/linescore/offense/first/fullName"):
+            case ("replace", "/liveData/linescore/offense/first/link"):
+            case ("add", "/liveData/linescore/offense/first/link"):
+            case ("replace", "/liveData/linescore/offense/second/fullName"):
+            case ("add", "/liveData/linescore/offense/second/fullName"):
+            case ("replace", "/liveData/linescore/offense/second/link"):
+            case ("add", "/liveData/linescore/offense/second/link"):
+            case ("replace", "/liveData/linescore/offense/third/fullName"):
+            case ("add", "/liveData/linescore/offense/third/fullName"):
+            case ("replace", "/liveData/linescore/offense/third/link"):
+            case ("add", "/liveData/linescore/offense/third/link"):
+                return;
+
+            // --- linescore / offense - typed runner advance (move ops).
+            // A move whose `from` matches neither slot falls through to the handlers below.
+            case ("move", "/liveData/linescore/offense/second"):
+                if (op.From == "/liveData/linescore/offense/first")
+                {
+                    feed.RunnerOnSecond = feed.RunnerOnFirst;
+                    feed.RunnerOnFirst = null;
+                    return;
+                }
+                break;
+            case ("move", "/liveData/linescore/offense/third"):
+                if (op.From == "/liveData/linescore/offense/first")
+                {
+                    feed.RunnerOnThird = feed.RunnerOnFirst;
+                    feed.RunnerOnFirst = null;
+                    return;
+                }
+                if (op.From == "/liveData/linescore/offense/second")
+                {
+                    feed.RunnerOnThird = feed.RunnerOnSecond;
+                    feed.RunnerOnSecond = null;
+                    return;
+                }
+                break;
         }
 
-        // Task 5 inserts the offense/runner cases into the switch above.
         // Task 6 and 7 insert the prefix-dispatched handlers here.
         // Task 8 inserts the decorative-prefix check and the unknown fallthrough here.
     }
@@ -190,4 +290,24 @@ public static class LiveFeedPatcher
         JsonValueKind.False => false,
         _ => null,
     };
+
+    /// <summary>
+    /// Extracts an <c>id</c> field from a JSON object value. Used by the whole-object
+    /// <c>add</c> handlers for <c>/liveData/linescore/offense/{first|second|third}</c>,
+    /// whose value shape is <c>{"id": N, "fullName": "...", "link": "..."}</c>.
+    /// </summary>
+    private static int? RunnerIdFromObject(JsonElement? value) =>
+        value is { ValueKind: JsonValueKind.Object } element && element.TryGetProperty("id", out var id)
+            ? IntValue(id)
+            : null;
+
+    /// <summary>
+    /// True if <paramref name="from"/> points at a batter field — either
+    /// <c>/plays/currentPlay/matchup/batter</c> or <c>/plays/allPlays/N/matchup/batter</c>.
+    /// Guards the copy-op shortcut that resolves "batter reaches base" from CurrentBatterId.
+    /// </summary>
+    private static bool IsBatterFromPath(string? from) =>
+        from is not null
+        && from.EndsWith("/matchup/batter", StringComparison.Ordinal)
+        && from.StartsWith("/liveData/plays/", StringComparison.Ordinal);
 }
