@@ -22,11 +22,13 @@ public sealed class AppOrchestrator
     private readonly ISettingsStore _settings;
     private readonly INotificationSink _notifications;
     private readonly TimeProvider _time;
+    private readonly SynchronizationContext? _context;
 
     private IReadOnlyList<Game> _games = [];
     private bool _hasStarted;
     private bool _isSyncing;
     private bool _hideBenchPlayers;
+    private bool _playerListsDirty;
     private CancellationTokenSource? _lifetime;
 
     public AppOrchestrator(
@@ -49,9 +51,11 @@ public sealed class AppOrchestrator
         _time = timeProvider ?? TimeProvider.System;
         _hideBenchPlayers = settings.HideBenchPlayers;
 
+        _context = SynchronizationContext.Current;
+
         _monitor.Configure(_states);
-        _states.OnStateChange = (_, _, _) => UpdatePlayerLists();
-        _monitor.OnGameStart = _ => UpdatePlayerLists();
+        _states.OnStateChange = HandleStateChange;
+        _monitor.OnGameStart = HandleGameStart;
 
         // Swift does this in RosterManager.init; the C# port made it explicit.
         _roster.LoadCachedRoster();
@@ -397,6 +401,77 @@ public sealed class AppOrchestrator
             StreamUrl = game is null ? null : StreamLinkRouter.Url(game),
             SortKey = DisplayRules.InGameSortKey(player, game, feed, lineup, proximity),
         };
+    }
+
+    // MARK: - Change handling
+
+    private void HandleStateChange(int playerId, PlayerState? oldState, PlayerState newState) =>
+        SchedulePlayerListRebuild();
+
+    private void HandleGameStart(int gamePk)
+    {
+        // The feed just flipped this game to In Progress - rebuild so upcoming players on it
+        // move to the in-game bucket.
+        SchedulePlayerListRebuild();
+        RunGuarded(() => _notifications.PurgeNotInLineupAsync(gamePk));
+    }
+
+    /// <summary>
+    /// Coalesces list rebuilds. A single poll cycle can fire 10+ state updates (pitcher
+    /// substitution sweep, batter and pitcher transitions); a full roster scan for each is
+    /// wasteful. Defer to the next tick on the Core context so all updates in one synchronous
+    /// pass collapse into one rebuild.
+    /// </summary>
+    private void SchedulePlayerListRebuild()
+    {
+        if (_playerListsDirty) return;
+        _playerListsDirty = true;
+
+        Post(() =>
+        {
+            _playerListsDirty = false;
+            UpdatePlayerLists();
+        });
+    }
+
+    /// <summary>
+    /// Queues work on the Core context — Swift's <c>Task { @MainActor in ... }</c>. Falls back
+    /// to a yielded continuation only when no context is installed (never true in the app or
+    /// in tests).
+    /// </summary>
+    private void Post(Action action)
+    {
+        if (_context is not null)
+        {
+            _context.Post(static state => ((Action)state!)(), action);
+            return;
+        }
+
+        _ = YieldThen(action);
+
+        static async Task YieldThen(Action queued)
+        {
+            await Task.Yield();
+            queued();
+        }
+    }
+
+    /// <summary>
+    /// Fire-and-forget on the Core context. The sink is shell-implemented (the toast API can
+    /// throw); a failed notification must not tear down the transition pipeline.
+    /// </summary>
+    private void RunGuarded(Func<Task> work) => _ = RunGuardedAsync(work);
+
+    private static async Task RunGuardedAsync(Func<Task> work)
+    {
+        try
+        {
+            await work();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[AppOrchestrator] notification work failed: {ex}");
+        }
     }
 
     private PlayerDisplay BuildUpcomingRow(Player player, DateTimeOffset startTime)
