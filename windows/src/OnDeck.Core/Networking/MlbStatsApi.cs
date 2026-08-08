@@ -124,6 +124,55 @@ public sealed class MlbStatsApi(HttpClient http, TimeProvider timeProvider)
         return LiveFeedDecoder.Decode(bytes);
     }
 
+    // MARK: - Diff Patch
+
+    /// <summary>Fetches diff patches for a game since a given timecode.</summary>
+    public async Task<DiffPatchResult> FetchDiffPatchAsync(
+        int gamePk, string sinceTimecode, CancellationToken ct = default)
+    {
+        var now = CurrentTimecode();
+        var url = $"{BaseUrl}/v1.1/game/{gamePk}/feed/live/diffPatch"
+                  + $"?startTimecode={sinceTimecode}&endTimecode={now}";
+
+        using var response = await http.GetAsync(url, ct);
+        response.EnsureSuccessStatusCode();
+
+        var bytes = await response.Content.ReadAsByteArrayAsync(ct);
+        using var document = JsonDocument.Parse(bytes);
+        var root = document.RootElement;
+
+        // The API sometimes returns a single feed object (dict) instead of an array. This
+        // happens during game phase transitions and resolves itself after a few cycles.
+        if (root.ValueKind != JsonValueKind.Array) return new DiffPatchResult.FullUpdate(bytes);
+
+        if (root.GetArrayLength() == 0) return new DiffPatchResult.NoChanges();
+
+        // Entries either carry a "diff" array (patches) or are full feed objects (fallback).
+        var operations = new List<PatchOperation>();
+        foreach (var entry in root.EnumerateArray())
+        {
+            if (entry.ValueKind == JsonValueKind.Object
+                && entry.TryGetProperty("diff", out var diff)
+                && diff.ValueKind == JsonValueKind.Array)
+            {
+                operations.AddRange(PatchOperation.ParseArray(diff));
+                continue;
+            }
+
+            // Full feed object instead of patches - hand back just this entry.
+            return new DiffPatchResult.FullUpdate(JsonSerializer.SerializeToUtf8Bytes(entry, Options));
+        }
+
+        return new DiffPatchResult.Patches(operations);
+    }
+
+    /// <summary>
+    /// <c>yyyyMMdd_HHmmss</c> UTC — the same format MLB reports in <c>metaData.timeStamp</c>,
+    /// which is where the caller's <c>startTimecode</c> comes from.
+    /// </summary>
+    private string CurrentTimecode() =>
+        timeProvider.GetUtcNow().ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
+
     // MARK: - Game Changes
 
     /// <summary>Returns the set of gamePks that have been updated since <paramref name="since"/>.</summary>
