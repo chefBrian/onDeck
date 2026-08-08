@@ -252,12 +252,10 @@ final class AppState {
         }
 
         for player in rosterManager.players {
-            guard player.isHitter,
-                  player.rosterStatus == .active,
+            guard player.rosterStatus == .active,
                   !notifiedNotInLineup.contains(player.id),
                   let side = game.side(for: player),
-                  lineup.isSubmitted(for: side),
-                  !lineup.ids(for: side).contains(player.id) else { continue }
+                  lineup.excludes(player, side: side) else { continue }
 
             notifiedNotInLineup.insert(player.id)
 

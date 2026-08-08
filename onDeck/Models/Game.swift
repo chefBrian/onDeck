@@ -38,6 +38,14 @@ struct GameLineup: Equatable {
     var homePitchers: Set<Int> = []
     var awayPitchers: Set<Int> = []
 
+    /// True when this side's batting card was filed without the player.
+    /// Hitters only: relievers are never on the card so its contents say
+    /// nothing about them, and SP-only players are handled separately by
+    /// the probable-pitcher day-off pass.
+    func excludes(_ player: Player, side: Game.Side) -> Bool {
+        player.isHitter && isSubmitted(for: side) && !ids(for: side).contains(player.id)
+    }
+
     func ids(for side: Game.Side) -> Set<Int> {
         let batters = side == .home ? home : away
         let pitchers = side == .home ? homePitchers : awayPitchers

@@ -42,8 +42,7 @@ private func inGameSortKey(for player: Player, proximity: BattingProximity?, in 
     // Not in Lineup: own side's card is filed and this player isn't on it.
     if let side = game.side(for: player),
        let lineup = appState.gameMonitor.lineupPlayerIDs[game.id],
-       lineup.isSubmitted(for: side),
-       !lineup.ids(for: side).contains(player.id) {
+       lineup.excludes(player, side: side) {
         return 200 + base
     }
 
@@ -356,11 +355,10 @@ private struct LivePlayerRow: View {
     private var isInLineup: Bool {
         guard let game else { return false }
         guard let side = game.side(for: player),
-              let lineup = appState.gameMonitor.lineupPlayerIDs[game.id],
-              lineup.isSubmitted(for: side) else {
+              let lineup = appState.gameMonitor.lineupPlayerIDs[game.id] else {
             return true // Assume in lineup until that side's card is filed
         }
-        return lineup.ids(for: side).contains(player.id)
+        return !lineup.excludes(player, side: side)
     }
 
     private var showsProximityDot: Bool {
@@ -554,7 +552,8 @@ private struct UpcomingPlayerRow: View {
               let side = game.side(for: player),
               let lineup = appState.gameMonitor.lineupPlayerIDs[game.id],
               lineup.isSubmitted(for: side) else { return .unknown }
-        guard lineup.ids(for: side).contains(player.id) else { return .notInLineup }
+        if lineup.excludes(player, side: side) { return .notInLineup }
+        guard lineup.ids(for: side).contains(player.id) else { return .unknown }
         // Check live feed first, then fall back to schedule lineup data
         if let feed = appState.gameMonitor.latestFeeds[game.id] {
             if let idx = feed.homeBattingOrder.firstIndex(of: player.id) {
