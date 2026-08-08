@@ -1,9 +1,9 @@
 # onDeck Windows Port — Handoff
 
-**As of:** 2026-08-08, end of Phase 4. Branch: `main`. 32 commits since `33e8031`.
+**As of:** 2026-08-08, end of Phase 5. Branch: `main`. 43 commits since `33e8031`.
 
-**State:** `OnDeck.Core` is complete except `AppOrchestrator`. 362 tests green, working tree clean,
-single-file publish verified. No shell work has started.
+**State:** `OnDeck.Core` is **complete**. 500 tests green, working tree clean, single-file publish
+verified. No shell work has started — Phase 6 is the first Windows-PC phase.
 
 ---
 
@@ -16,8 +16,8 @@ single-file publish verified. No shell work has started.
    locally but will not be on a fresh clone). Holds the gotchas the port must preserve.
 3. The Swift source for the phase you're on. **The Swift file named in each phase is the
    authoritative spec** — read it before writing anything.
-4. `windows/plans/*.md` — the four executed phase plans. Each has a "Deviations" section recording
-   where the C# port intentionally differs from Swift and why.
+4. `windows/plans/*.md` — the five executed phase plans (Phases 0–5). Each has a "Deviations"
+   section recording where the C# port intentionally differs from Swift and why.
 
 ## 2. Workflow in use
 
@@ -73,8 +73,9 @@ windows/
 ├── OnDeck.slnx, Directory.Build.props, NuGet.config, .gitignore
 ├── PORT_PLAN.md, HANDOFF.md, plans/
 ├── src/OnDeck.Core/          net10.0, ZERO package references — keep it that way
-│   ├── ISettingsStore.cs
-│   ├── Models/               Player, PlayerState, Game+GameLineup, LiveFeedData+stats
+│   ├── ISettingsStore.cs, INotificationSink.cs, AppOrchestrator.cs, DisplayRules.cs
+│   ├── Models/               Player, PlayerState, Game+GameLineup, LiveFeedData+stats,
+│   │                         PlayerDisplay (+BattingProximity, LineupInfo, DelayIndicator)
 │   ├── Networking/           MlbStatsApi, FantraxApi, FantraxModels, LiveFeedDecoder, DiffPatchResult
 │   ├── Utilities/            LiveFeedPatcher, PatchOperation, UnknownPatchLogger, TeamMapping,
 │   │                         NameCleaner, FantraxUrlParser, StreamLinkRouter, HeadshotCache,
@@ -82,6 +83,10 @@ windows/
 │   └── Managers/             RosterManager, ScheduleManager, StateManager, GameMonitor
 ├── src/OnDeck.App/           net10.0-windows WPF — still the bare template
 └── tests/OnDeck.Core.Tests/  net10.0, xunit v2 + Microsoft.Extensions.TimeProvider.Testing
+    ├── SingleThreadedContext.cs      pumping single-threaded SynchronizationContext fixture
+    ├── RecordingNotificationSink.cs  INotificationSink double with an ordered call log
+    ├── Networking/RoutingHttpMessageHandler.cs   URL-routed HTTP double
+    └── App/OrchestratorHarness.cs    composes managers + routes + orchestrator
 ```
 
 `Microsoft.Extensions.TimeProvider.Testing` is a **test-project-only** dependency. `OnDeck.Core`
@@ -149,61 +154,66 @@ Each phase plan has its own list; the ones with ongoing consequences:
 | `MemoryStats`, `MemoryPressureRelief` **not ported** | macOS-only, per master plan |
 | Netflix stream URL gains a trailing slash | .NET's `Uri` normalizes a bare authority; same destination |
 | `GameMonitor.TrackGames` added (internal) | Splits state reset from launching the coordinator so the pure scheduling functions are testable without the loop concurrently consuming milestones. `StartMonitoring` = `TrackGames` + loop |
+| **Phase 5:** `AppOrchestrator.ActivePlayers` added to the contract | `MenuBarView.swift` renders an "Active Now" section; `PORT_PLAN.md` listed only the other three lists. Additive — `HasActivePlayers` derives from it |
+| **Phase 5:** `ParsedLeagueId` / `UrlHasTeamId` / `EffectiveTeamId` are public | `SettingsView.swift` and the flyout footer read all three off `AppState`; Phases 7–8 need them |
+| **Phase 5:** `PlayerDisplay` carries the whole `LiveFeedData` | `LivePlayerRow` reads a dozen feed fields (score, bases, count, outs, inning, half); passing the snapshot beats inventing a parallel projection |
+| **Phase 5:** `BattingProximity` / `LineupInfo` are `Kind` + `Value` structs, not record hierarchies | A nested case type named `OnDeck` inside namespace `OnDeck.Core` makes the bare identifier ambiguous at type-name position |
+| **Phase 5:** `DelayIndicator` replaces `delayIcon`'s SF Symbol names | Core classifies; the shell picks the icon |
+| **Phase 5:** extra `UpdatePlayerLists()` after schedule-lineup seeding | Swift builds lists *before* seeding and gets away with it because `@Observable` views re-read `GameMonitor` at render. Our rows are snapshots, so without it every UPCOMING row shows `LineupInfo.Unknown` until the next state change |
+| **Phase 5:** notification work runs through `RunGuarded` (catch + `Debug.WriteLine`) | The sink is shell-implemented and the toast API can throw; a failed notification must not tear down the transition pipeline |
+| **Phase 5:** `requestPermission()`, `MemoryPressureRelief`, `FloatingPanel` auto-open not ported into Core | Shell concerns (Phases 7/9) or macOS-only |
 
 `OnDeck.Core` has `<InternalsVisibleTo Include="OnDeck.Core.Tests" />` for the `internal` seams on
 `GameMonitor` (`TrackGames`, `NextEventDelay`, `SelectGamesToPoll`, `PollSingleGameAsync`,
-`ProcessFeed`).
+`ProcessFeed`), `DisplayRules` (the whole class), and `AppOrchestrator.TimeUntilNextEightAm`.
 
-## 9. Next up — Phase 5: AppOrchestrator
+## 9. Next up — Phase 6: Shell skeleton + platform spikes
 
-**Spec:** `onDeck/App/AppState.swift` (logic portions, ~450 lines) and `onDeck/Views/MenuBarView.swift`
-(**sorting and filter rules only** — the UI itself is Phase 7).
+*(Windows PC from here on. Phases 6–11 need a human at the keyboard for the manual Win11 checks:
+light/dark taskbar, 100/150% scaling, multi-monitor, toast click-through with the app dead, Focus
+Assist.)*
 
-**Public surface is already fixed** by `PORT_PLAN.md` §"Cross-Phase Interface Contracts" — copy
-`AppOrchestrator` and `INotificationSink` from there verbatim, don't redesign. `ISettingsStore`
-already exists in Core and matches the contract.
+**Phase 6 opens with a de-risking spike that must run before any `ToastService` code exists:**
+publish a hello-world single-file exe, fire a toast via `ToastNotificationManagerCompat` with launch
+args, click it with the app running **and** not running, and confirm `OnActivated` fires with args
+both ways. `Microsoft.Toolkit.Uwp.Notifications` is archived/maintenance-mode. If the spike fails,
+switch to the Windows App SDK `AppNotificationManager` fallback **then**, not later.
 
-What Phase 5 must cover:
-
-- Section grouping + **In Game sort** (batting band / notBatting band / pitcher ranking) and the
-  **Done statLine filter** — derive `PlayerDisplay`'s fields from what `MenuBarView.swift` actually
-  consumes; don't invent them.
-- Bench filter + `SettingsChanged()` doing a **local rebuild with no network** (the `hideBenchPlayers`
-  `didSet` analog).
-- **15-min-before-first-game resync** — `AppState.swift:497-520`. Must **not** call resync when games
-  have already started: that causes an infinite restart loop cancelling in-flight requests.
-- 8AM daily re-sync; 30s resume debounce.
-- Team-picker state: `FetchTeamsAsync` / `AvailableTeams` / `IsLoadingTeams` / `TeamsError`.
-- `ResyncRosterAsync` returning success (drives the flyout's 4-state Refresh button).
-- **Not-in-lineup reconciliation** — `AppState.swift:176, 238-301`: one-shot `notifiedNotInLineup`
-  set, don't-notify-once-game-started guard, `onLineupUpdate`/`onGameStart` wiring including
-  game-start `PurgeNotInLineupAsync` and `PurgeAllAsync` on every schedule refresh.
-- Transition handling calling `INotificationSink` with **`isStillActive` re-check after every await**
-  — re-check state after any async notification send and purge if it changed, or stale notifications
-  stick. This is the reason for the no-`ConfigureAwait(false)` rule.
-- Immutable list snapshots: `IReadOnlyList` replaced wholesale, never mutated in place. The coalesced
-  rebuild becomes a dirty-flag + posted continuation on the same context.
-
-Test with `FakeTimeProvider` throughout and a mock `INotificationSink` asserting notify/purge
-sequences.
-
-**Likely need:** a single-threaded `SynchronizationContext` test fixture, so the race-guard semantics
-are exercised as they run in the WPF `Dispatcher`. Nothing so far has needed one.
-
-## 10. After Phase 5 — the shell (Phases 6–11)
-
-Phases 6–11 are WPF and **need a human at the keyboard** for the manual Win11 verification steps
-(light/dark taskbar, 100/150% scaling, multi-monitor, toast click-through with the app dead, Focus
-Assist).
-
-**Phase 6 opens with a de-risking spike that must run before any `ToastService` code exists:** publish
-a hello-world single-file exe, fire a toast via `ToastNotificationManagerCompat` with launch args,
-click it with the app running **and** not running, and confirm `OnActivated` fires with args both
-ways. `Microsoft.Toolkit.Uwp.Notifications` is archived/maintenance-mode. If the spike fails, switch
-to the Windows App SDK `AppNotificationManager` fallback **then**, not later.
+Then, per `PORT_PLAN.md` Phase 6: single-instance guard (named mutex — needed early because toast
+activation can re-launch the exe), tray icon with white/dark/green .ico + `ThemeWatcher`, and
+`FlyoutWindow` positioned off `Shell_NotifyIconGetRect` with an acrylic backdrop **and a solid-colour
+fallback**.
 
 Also unstarted: icon assets. Tabler Icons `ball-baseball` (MIT), recoloured white/dark/green and
 rendered to a multi-res `.ico` (16/20/24/32).
+
+### What the shell must honour when it wires up Core
+
+- **Construct `AppOrchestrator` on the Dispatcher thread.** The constructor captures
+  `SynchronizationContext.Current` and posts the coalesced list rebuild to it. Building it on a pool
+  thread silently drops the single-thread guarantee the race guards depend on.
+- `StateChanged` fires on that same context, so binding can update directly — no `Dispatcher.Invoke`
+  needed if Core was constructed correctly.
+- The four list properties are immutable snapshots replaced wholesale. Bind to the property, don't
+  hold a reference to the list.
+- `SettingsChanged()` after any `ISettingsStore` write; it re-reads settings and rebuilds locally
+  with no network.
+- `ToastService` (Phase 9) implements `INotificationSink` and checks the per-type toggles itself —
+  Core calls the sink unconditionally.
+
+### Test infrastructure available to later phases
+
+- `SingleThreadedContext.Run(async () => …)` — pumping single-threaded context; `Settle()` yields
+  32 times so queued continuations drain before assertions.
+- `RoutingHttpMessageHandler` — routes canned responses by URL substring. Use this rather than
+  `StubHttpMessageHandler` whenever concurrent requests are in play.
+- `OrchestratorHarness` — declares players/games once and derives the Fantrax, MLB-search, schedule
+  and cached-roster payloads from them; `Run`/`RunStarted` wrap the context and clean up.
+
+## 10. After Phase 6 — Phases 7–11
+
+Flyout UI + floating panel (7), Settings (8), Notifications (9), system integration & ship (10),
+parity QA (11). See `PORT_PLAN.md` for each phase's scope and the parity checklist.
 
 ## 11. Verification before claiming a phase done
 

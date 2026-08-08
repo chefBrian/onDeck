@@ -4263,23 +4263,21 @@ git commit -m "phase 5: pre-game, daily and system-resume refresh scheduling"
 
 ## Done criteria
 
-- [ ] `dotnet test windows/OnDeck.slnx` → `Failed: 0`
-- [ ] `grep -c PackageReference windows/src/OnDeck.Core/OnDeck.Core.csproj` → `0`
-- [ ] `grep -rn "ConfigureAwait" windows/src/OnDeck.Core` → no matches
-- [ ] Single-file publish still green:
+- [x] `dotnet test windows/OnDeck.slnx` → `Failed: 0` (500 passed)
+- [x] `grep -c PackageReference windows/src/OnDeck.Core/OnDeck.Core.csproj` → `0`
+- [x] `grep -rn "ConfigureAwait" windows/src/OnDeck.Core` → only the doc comment saying there is none
+- [x] Single-file publish still green:
   ```bash
   dotnet publish windows/src/OnDeck.App -c Release -r win-x64 --self-contained \
     -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
     -p:EnableCompressionInSingleFile=true
   ```
-- [ ] Every member of the `AppOrchestrator` and `INotificationSink` contracts in `PORT_PLAN.md` exists with the contract's name and type
-- [ ] `git status --short` → clean
-- [ ] This plan's **Deviations** section filled in, and the phase's rows appended to `windows/HANDOFF.md` §8
-- [ ] `windows/HANDOFF.md` §9 replaced with a Phase 6 hand-off (the toast-activation spike is the entry point)
+- [x] Every member of the `AppOrchestrator` and `INotificationSink` contracts in `PORT_PLAN.md` exists with the contract's name and type
+- [x] `git status --short` → clean
+- [x] This plan's **Deviations** section filled in, and the phase's rows appended to `windows/HANDOFF.md` §8
+- [x] `windows/HANDOFF.md` §9 replaced with a Phase 6 hand-off (the toast-activation spike is the entry point)
 
 ## Deviations from the Swift original
-
-Fill in during execution. Known going in:
 
 | Deviation | Why |
 |---|---|
@@ -4293,5 +4291,7 @@ Fill in during execution. Known going in:
 | `FloatingPanel` auto-open on launch dropped from startup | Shell concern — Phase 7 reads `ISettingsStore.AlwaysOpenPopout` |
 | Transition/notification work runs through `RunGuarded` (catch + `Debug.WriteLine`) | The sink is shell-implemented and the toast API can throw; a failed notification must not tear down the pipeline. Swift's detached `Task` has the same effect by default |
 | `SettingsChanged()` is an explicit call, not a property `didSet` | Core has no observation framework; the shell writes `ISettingsStore` then calls it |
+| **Extra `UpdatePlayerLists()` at the end of `FetchScheduleAndStartMonitoringAsync`** | Swift builds its lists in `initializePlayerStates()`, *before* the schedule lineups are seeded into `GameMonitor` — harmless there because the `@Observable` views re-read `gameMonitor.lineupPlayerIDs` at render time. Here the rows are snapshots, so without the second rebuild every UPCOMING row shows `LineupInfo.Unknown` until the next state change. Caught by `UpcomingPlayers_CarryTheirLineupBadgeAndStartTime` |
+| Tests drive HTTP through a new `RoutingHttpMessageHandler` rather than the FIFO `StubHttpMessageHandler` | `RosterManager` resolves MLB IDs with `Task.WhenAll`, so a queue can't map name → id deterministically; routing by URL also lets one handler serve Fantrax, search, schedule and feed in the same test |
 
 
