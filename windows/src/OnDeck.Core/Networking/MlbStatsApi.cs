@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OnDeck.Core.Models;
+using OnDeck.Core.Utilities;
 
 namespace OnDeck.Core.Networking;
 
@@ -25,6 +26,36 @@ public sealed class MlbStatsApi(HttpClient http, TimeProvider timeProvider)
     /// </summary>
     public static HttpClient CreateDefaultClient() =>
         new(new SocketsHttpHandler { MaxConnectionsPerServer = 2 });
+
+    // MARK: - Player Search
+
+    public async Task<int?> SearchPlayerAsync(
+        string name, string? teamName, CancellationToken ct = default)
+    {
+        var url = $"{BaseUrl}/v1/people/search?names={Uri.EscapeDataString(name)}&hydrate=currentTeam";
+        var response = await GetJsonAsync<SearchResponse>(url, ct);
+
+        if (response.People is not { Count: > 0 } people) return null;
+
+        // If we have a team name for disambiguation, find the matching player.
+        if (teamName is not null)
+        {
+            foreach (var person in people)
+            {
+                if (person.CurrentTeam?.Name is not { } currentTeamName) continue;
+
+                if (TeamMapping.Matches(currentTeamName, teamName)
+                    || currentTeamName.Contains(teamName, StringComparison.Ordinal)
+                    || teamName.Contains(currentTeamName, StringComparison.Ordinal))
+                {
+                    return person.Id;
+                }
+            }
+        }
+
+        // Fall back to first result
+        return people[0].Id;
+    }
 
     // MARK: - Schedule
 
@@ -87,6 +118,26 @@ public sealed class MlbStatsApi(HttpClient http, TimeProvider timeProvider)
         await using var stream = await response.Content.ReadAsStreamAsync(ct);
         return await JsonSerializer.DeserializeAsync<T>(stream, Options, ct)
                ?? throw new JsonException($"{url} decoded to null");
+    }
+
+    // --- Player search DTOs
+
+    private sealed class SearchResponse
+    {
+        public List<SearchPerson>? People { get; set; }
+    }
+
+    private sealed class SearchPerson
+    {
+        public int Id { get; set; }
+        public required string FullName { get; set; }
+        public SearchTeam? CurrentTeam { get; set; }
+    }
+
+    private sealed class SearchTeam
+    {
+        public int Id { get; set; }
+        public required string Name { get; set; }
     }
 
     // --- Schedule DTOs
