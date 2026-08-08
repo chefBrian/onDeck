@@ -173,13 +173,15 @@ Each phase plan has its own list; the ones with ongoing consequences:
 light/dark taskbar, 100/150% scaling, multi-monitor, toast click-through with the app dead, Focus
 Assist.)*
 
-**Phase 6 opens with a de-risking spike that must run before any `ToastService` code exists:**
-publish a hello-world single-file exe, fire a toast via `ToastNotificationManagerCompat` with launch
-args, click it with the app running **and** not running, and confirm `OnActivated` fires with args
-both ways. `Microsoft.Toolkit.Uwp.Notifications` is archived/maintenance-mode. If the spike fails,
-switch to the Windows App SDK `AppNotificationManager` fallback **then**, not later.
+**The entry spike is done and PASSED** (2026-08-08) — `windows/spikes/ToastActivationSpike/`, result
+in its `FINDINGS.md`. `Microsoft.Toolkit.Uwp.Notifications` 7.1.3 activates an unpackaged single-file
+exe both hot and cold with arguments intact, so the Windows App SDK fallback is off the table. Three
+findings bind later work: no Start Menu shortcut or AUMID entry is created (activation routes through
+the registered CLSID alone); `OnDeck.App` must move to `net10.0-windows10.0.17763.0` in Phase 9; and
+the single-instance guard must not kill a `-ToastActivated -Embedding` launch before its activation
+is handled.
 
-Then, per `PORT_PLAN.md` Phase 6: single-instance guard (named mutex — needed early because toast
+Remaining, per `PORT_PLAN.md` Phase 6: single-instance guard (named mutex — needed early because toast
 activation can re-launch the exe), tray icon with white/dark/green .ico + `ThemeWatcher`, and
 `FlyoutWindow` positioned off `Shell_NotifyIconGetRect` with an acrylic backdrop **and a solid-colour
 fallback**.

@@ -1,0 +1,51 @@
+<Window x:Class="OnDeck.Spike.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="onDeck — toast activation spike"
+        Width="760"
+        Height="520"
+        WindowStartupLocation="CenterScreen">
+    <DockPanel Margin="12">
+        <TextBlock DockPanel.Dock="Top"
+                   TextWrapping="Wrap"
+                   Margin="0,0,0,10"
+                   Text="Test A: click &quot;Send toast&quot;, then click the toast while this window is open.&#10;Test B: click &quot;Send toast, then quit&quot;, wait for the app to exit, then click the toast in the Action Center.&#10;Both should append an ACTIVATED line below with the launch arguments intact." />
+
+        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+            <Button x:Name="SendButton"
+                    Content="Send toast"
+                    Padding="12,6"
+                    Margin="0,0,8,0"
+                    Click="SendToast" />
+            <Button x:Name="SendAndQuitButton"
+                    Content="Send toast, then quit in 3s"
+                    Padding="12,6"
+                    Margin="0,0,8,0"
+                    Click="SendToastAndQuit" />
+            <Button Content="Refresh log"
+                    Padding="12,6"
+                    Margin="0,0,8,0"
+                    Click="RefreshLog" />
+            <Button Content="Clear log"
+                    Padding="12,6"
+                    Margin="0,0,8,0"
+                    Click="ClearLog" />
+            <Button Content="Uninstall toast registration"
+                    Padding="12,6"
+                    Click="UninstallRegistration" />
+        </WrapPanel>
+
+        <TextBlock x:Name="StatusText"
+                   DockPanel.Dock="Top"
+                   Margin="0,0,0,8"
+                   FontWeight="SemiBold" />
+
+        <TextBox x:Name="LogText"
+                 IsReadOnly="True"
+                 FontFamily="Cascadia Mono, Consolas, monospace"
+                 FontSize="12"
+                 VerticalScrollBarVisibility="Auto"
+                 HorizontalScrollBarVisibility="Auto"
+                 TextWrapping="NoWrap" />
+    </DockPanel>
+</Window>
