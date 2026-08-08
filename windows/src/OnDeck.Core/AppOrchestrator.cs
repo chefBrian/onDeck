@@ -31,6 +31,9 @@ public sealed class AppOrchestrator
     private bool _hideBenchPlayers;
     private bool _playerListsDirty;
     private CancellationTokenSource? _lifetime;
+    private CancellationTokenSource? _preGameRefresh;
+    private CancellationTokenSource? _dailyRefresh;
+    private DateTimeOffset _lastResumeTime = DateTimeOffset.MinValue;
 
     public AppOrchestrator(
         RosterManager roster,
@@ -158,6 +161,7 @@ public sealed class AppOrchestrator
         }
 
         await FetchScheduleAndStartMonitoringAsync();
+        ScheduleDailyRefresh();
     }
 
     // MARK: - Team fetching
@@ -255,6 +259,8 @@ public sealed class AppOrchestrator
         // @Observable views just re-read GameMonitor at render time; here the rows are snapshots,
         // so rebuild now that the badges can be resolved.
         UpdatePlayerLists();
+
+        SchedulePreGameRefresh();
     }
 
     private void InitializePlayerStates()
@@ -620,6 +626,96 @@ public sealed class AppOrchestrator
 
     private static string FormatGameString(PlayerState.GameContext context) =>
         $"{context.AwayTeam} {context.AwayScore} - {context.HomeTeam} {context.HomeScore}";
+
+    // MARK: - Pre-game refresh (15 min before the first game)
+
+    private void SchedulePreGameRefresh()
+    {
+        _preGameRefresh?.Cancel();
+        _preGameRefresh?.Dispose();
+        _preGameRefresh = null;
+
+        if (_games.Count == 0) return;
+
+        var earliestStart = _games.Min(game => game.StartTime);
+        var delay = earliestStart - TimeSpan.FromMinutes(15) - _time.GetUtcNow();
+
+        // Already past the refresh window - monitoring is running. Resyncing here restarts
+        // monitoring, which cancels in-flight requests and reschedules this: an infinite loop.
+        if (delay <= TimeSpan.Zero) return;
+
+        var refresh = CancellationTokenSource.CreateLinkedTokenSource(Token);
+        _preGameRefresh = refresh;
+
+        RunGuarded(async () =>
+        {
+            try
+            {
+                await Task.Delay(delay, _time, refresh.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            await ResyncRosterAsync();
+        });
+    }
+
+    // MARK: - Sleep/wake and unlock recovery
+
+    public async Task HandleSystemResumeAsync()
+    {
+        // Debounce: skip if recovery ran within the last 30 seconds.
+        var now = _time.GetUtcNow();
+        if (now - _lastResumeTime <= TimeSpan.FromSeconds(30)) return;
+        _lastResumeTime = now;
+
+        if (RosterUrl.Length == 0 || EffectiveTeamId is null) return;
+
+        _monitor.InvalidateTimecodes();
+        await ResyncRosterAsync();
+    }
+
+    // MARK: - Daily refresh (8 AM)
+
+    private void ScheduleDailyRefresh()
+    {
+        _dailyRefresh?.Cancel();
+        _dailyRefresh?.Dispose();
+
+        var refresh = CancellationTokenSource.CreateLinkedTokenSource(Token);
+        _dailyRefresh = refresh;
+
+        RunGuarded(async () =>
+        {
+            while (!refresh.Token.IsCancellationRequested)
+            {
+                var interval = TimeUntilNextEightAm();
+                if (interval < TimeSpan.FromSeconds(60)) interval = TimeSpan.FromSeconds(60);
+
+                try
+                {
+                    await Task.Delay(interval, _time, refresh.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+
+                await ResyncRosterAsync();
+            }
+        });
+    }
+
+    /// <summary>Time until the next 8 AM local — today's if it hasn't passed, else tomorrow's.</summary>
+    internal TimeSpan TimeUntilNextEightAm()
+    {
+        var now = _time.GetLocalNow();
+        var eightAm = new DateTimeOffset(now.Year, now.Month, now.Day, 8, 0, 0, now.Offset);
+        var next = now.Hour < 8 ? eightAm : eightAm.AddDays(1);
+        return next - now;
+    }
 
     private PlayerDisplay BuildUpcomingRow(Player player, DateTimeOffset startTime)
     {

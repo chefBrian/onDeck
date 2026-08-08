@@ -33,7 +33,7 @@ public class AppOrchestratorTransitionTests
 
             Assert.Equal(
                 $"batting:101:1:{GameString}:Bot 3:https://www.peacocktv.com/sports/mlb",
-                Assert.Single(harness.Sink.Calls.Where(call => call.StartsWith("batting:", StringComparison.Ordinal))));
+                Assert.Single(harness.Sink.Calls, call => call.StartsWith("batting:", StringComparison.Ordinal)));
         });
     }
 
@@ -49,7 +49,7 @@ public class AppOrchestratorTransitionTests
 
             Assert.Equal(
                 $"pitching:901:1:{GameString}:Bot 3:https://www.peacocktv.com/sports/mlb",
-                Assert.Single(harness.Sink.Calls.Where(call => call.StartsWith("pitching:", StringComparison.Ordinal))));
+                Assert.Single(harness.Sink.Calls, call => call.StartsWith("pitching:", StringComparison.Ordinal)));
         });
     }
 
@@ -67,7 +67,7 @@ public class AppOrchestratorTransitionTests
             harness.States.Update(101, Active());
             await SingleThreadedContext.Settle();
 
-            Assert.Single(harness.Sink.Calls.Where(call => call.StartsWith("batting:", StringComparison.Ordinal)));
+            Assert.Single(harness.Sink.Calls, call => call.StartsWith("batting:", StringComparison.Ordinal));
         });
     }
 

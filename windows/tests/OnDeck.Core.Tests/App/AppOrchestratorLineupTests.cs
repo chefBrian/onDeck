@@ -48,8 +48,8 @@ public class AppOrchestratorLineupTests
 
             await SingleThreadedContext.Settle();
 
-            Assert.Single(harness.Sink.Calls.Where(
-                call => call.StartsWith("notInLineup:", StringComparison.Ordinal)));
+            Assert.Single(
+                harness.Sink.Calls, call => call.StartsWith("notInLineup:", StringComparison.Ordinal));
         });
     }
 

@@ -107,7 +107,7 @@ public class AppOrchestratorRebuildTests
             harness.GoLive(1);
             await SingleThreadedContext.Settle();
 
-            Assert.Single(harness.Sink.Calls.Where(call => call == "purgeNotInLineup:1"));
+            Assert.Single(harness.Sink.Calls, call => call == "purgeNotInLineup:1");
         });
     }
 }
