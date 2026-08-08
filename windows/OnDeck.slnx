@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OnDeck.App/OnDeck.App.csproj" />
+    <Project Path="src/OnDeck.Core/OnDeck.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OnDeck.Core.Tests/OnDeck.Core.Tests.csproj" />
+  </Folder>
+</Solution>
