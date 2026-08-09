@@ -211,6 +211,16 @@ These are all **silent** — they compile, run, and look merely "a bit off":
    element — not nested inside it. Nesting gives `MC3015` at build time.
 5. **Don't rely on inherited `Foreground` inside a templated control** (see 1). Every text run in
    `FlyoutContent.xaml` sets its own.
+6. **A focusable `ScrollViewer` swallows `MouseLeftButtonDown` before any ancestor sees it.** It
+   takes focus on a left press and marks the underlying `MouseDown` handled;
+   `MouseLeftButtonDown` is a **`Direct`** event that WPF only re-raises on elements the bubbling
+   `MouseDown` reaches *unhandled*. So the floating panel's `OnDragBackground` — on the `Border`
+   outside the scroller — never ran, and the panel could not be dragged by a single pixel. Fixed
+   with `Focusable="False"` on the panel's `ScrollViewer`; the press then reaches the `Border`,
+   while a press on a row still stops at its own `Button`. **Any handler you put on an ancestor of
+   a `ScrollViewer` is dead code unless you check this.** The general escape hatch is the
+   tunnelling `PreviewMouseLeftButtonDown`, but it fires *before* the buttons and would have
+   broken row clicks here.
 
 ## 7. Bug found and fixed during the port
 
@@ -406,7 +416,8 @@ taskbar). Phase 7a rows kept; 7b rows appended:
 | **7b:** name / scores / count render light on the dark surface | **Pass** after the `RowButton` `Foreground` fix |
 | **7b:** flyout grows to the monitor rather than scrolling at a fixed height | **Pass** |
 | **7b:** acrylic backdrop | **Fail, unresolved** — opaque until Refresh is pressed, then translucent; the panel is always opaque. See `ACRYLIC-OPEN-ISSUE.md` |
-| **7b:** floating panel opens, drags, persists its frame, auto-opens | **Not run** |
+| **7b:** floating panel drags by its background | **Pass, 2026-08-09, after a fix** — it never could. A focusable `ScrollViewer` ate the press; see §6 trap 6. Owner-confirmed |
+| **7b:** floating panel opens, persists its frame, auto-opens | **Not run** |
 | **8:** Settings opens from the footer gear (first in the row) and from the tray item | **Pass** |
 | **8:** text is readable on the cards in both Windows themes, repainting on a live theme change | **Pass** — no repeat of 7b's black-on-dark |
 | **8:** grouped-card layout and 13/10 pt type read against the Mac Settings pane | **Pass** |
@@ -566,9 +577,10 @@ way to clear it:
   unit-tested and `--test-toast` respects them, but nobody has flipped a checkbox and watched a
   live toast not arrive.
 - **Floating panel behaviour end to end** — opens from Float (footer *and* tray), stays on top,
-  does not steal focus, drags by background, remembers its frame across a restart, auto-opens when
-  `alwaysOpenPopout` is true. Only its opaque backdrop has been observed. **The Always-open-popout
-  checkbox that drives it is now settable from the UI** (Phase 8), so this is easier to exercise.
+  does not steal focus, remembers its frame across a restart, auto-opens when `alwaysOpenPopout`
+  is true. Dragging by the background is now verified (and was broken until 2026-08-09, §6 trap 6);
+  the rest of the list is still unexercised. **The Always-open-popout checkbox that drives it is
+  now settable from the UI** (Phase 8), so this is easier to exercise.
 - **UPCOMING and DONE sections against live data** — seen briefly and looked right, but the badge
   states (red dot / green tick / batting-order number) and the PPD label have not been checked
   against a game that is actually postponed or has a filed lineup card.

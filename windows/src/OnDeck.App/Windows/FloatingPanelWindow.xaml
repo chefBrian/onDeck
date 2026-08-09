@@ -12,7 +12,15 @@
         Topmost="True"
         Background="Transparent">
     <Border x:Name="Root" CornerRadius="12" MouseLeftButtonDown="OnDragBackground">
-        <ScrollViewer VerticalScrollBarVisibility="Auto"
+
+        <!-- Focusable="False" is load-bearing, and silent if removed: a focusable ScrollViewer
+             takes focus on a left press and marks MouseDown handled. MouseLeftButtonDown is a
+             Direct event that WPF only re-raises on elements the bubbling MouseDown reaches
+             unhandled, so with it True the press dies here and OnDragBackground never runs -
+             the panel cannot be dragged anywhere. Focus is no loss on a WS_EX_NOACTIVATE window
+             that never takes any, and the wheel scrolls without it. -->
+        <ScrollViewer Focusable="False"
+                      VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Disabled">
             <views:FlyoutContent x:Name="Sections" IsFloating="True" />
         </ScrollViewer>
