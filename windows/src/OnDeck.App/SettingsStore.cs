@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Windows;
 using OnDeck.Core;
 
 namespace OnDeck.App;
@@ -95,6 +96,16 @@ public sealed class SettingsStore : ISettingsStore
         set => Update(values => values with { RosterCacheJson = value });
     }
 
+    /// <summary>
+    /// The floating panel's last frame. Shell-only and deliberately absent from
+    /// <see cref="ISettingsStore"/> — Core has no business knowing a window exists.
+    /// </summary>
+    public Rect? FloatingPanelFrame
+    {
+        get => _values.PanelFrame?.ToRect();
+        set => Update(values => values with { PanelFrame = StoredRect.From(value) });
+    }
+
     private void Update(Func<Snapshot, Snapshot> change)
     {
         lock (_gate)
@@ -148,5 +159,15 @@ public sealed class SettingsStore : ISettingsStore
         public bool NotifyPitchingResult { get; init; } = true;
         public bool NotifyNotInLineup { get; init; } = true;
         public string? RosterCacheJson { get; init; }
+        public StoredRect? PanelFrame { get; init; }
+    }
+
+    /// <summary><see cref="Rect"/> has no parameterless constructor, so it is persisted flat.</summary>
+    private sealed record StoredRect(double X, double Y, double Width, double Height)
+    {
+        public Rect ToRect() => new(X, Y, Width, Height);
+
+        public static StoredRect? From(Rect? rect) =>
+            rect is { } value ? new StoredRect(value.X, value.Y, value.Width, value.Height) : null;
     }
 }

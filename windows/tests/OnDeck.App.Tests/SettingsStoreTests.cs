@@ -39,6 +39,22 @@ public class SettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public void FloatingPanelFrame_RoundTripsThroughTheFile()
+    {
+        var frame = new System.Windows.Rect(120, 80, 300, 520);
+
+        new SettingsStore(_directory).FloatingPanelFrame = frame;
+
+        Assert.Equal(frame, new SettingsStore(_directory).FloatingPanelFrame);
+    }
+
+    [Fact]
+    public void FloatingPanelFrame_IsNullUntilThePanelHasBeenPlaced()
+    {
+        Assert.Null(new SettingsStore(_directory).FloatingPanelFrame);
+    }
+
+    [Fact]
     public void ValuesRoundTripThroughANewInstance()
     {
         var first = new SettingsStore(_directory)
