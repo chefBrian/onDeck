@@ -55,14 +55,22 @@
 
             <Button x:Name="RefreshButton" Style="{StaticResource FooterButton}" Click="OnRefresh">
                 <StackPanel>
-                    <TextBlock x:Name="RefreshGlyph" Text="&#xE72C;"
-                               FontFamily="{StaticResource FooterIconFont}"
-                               FontSize="16" Height="20" HorizontalAlignment="Center"
-                               RenderTransformOrigin="0.5,0.5">
-                        <TextBlock.RenderTransform>
-                            <RotateTransform />
-                        </TextBlock.RenderTransform>
-                    </TextBlock>
+                    <!-- The 20px icon row lives on the wrapper, not the TextBlock: with
+                         Height="20" on the TextBlock itself, origin 0.5,0.5 sat at y=10 while
+                         the 16px glyph's ink centers at y=8, so the spin orbited instead of
+                         rotating in place. Auto-sized, the line box is exactly one em and the
+                         ink center is the box center. -->
+                    <Grid Height="20">
+                        <TextBlock x:Name="RefreshGlyph" Text="&#xE72C;"
+                                   FontFamily="{StaticResource FooterIconFont}"
+                                   FontSize="16" HorizontalAlignment="Center"
+                                   VerticalAlignment="Top"
+                                   RenderTransformOrigin="0.5,0.5">
+                            <TextBlock.RenderTransform>
+                                <RotateTransform />
+                            </TextBlock.RenderTransform>
+                        </TextBlock>
+                    </Grid>
                     <TextBlock Text="Refresh" FontSize="10" Margin="0,3,0,0"
                                HorizontalAlignment="Center" />
                 </StackPanel>

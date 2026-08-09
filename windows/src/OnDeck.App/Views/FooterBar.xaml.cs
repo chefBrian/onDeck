@@ -10,12 +10,14 @@ namespace OnDeck.App.Views;
 /// </summary>
 public partial class FooterBar : UserControl
 {
-    // Segoe Fluent Icons: Refresh, CheckMark, Cancel, OpenInNewWindow, BackToWindow.
-    private const string RefreshGlyphText = "";
-    private const string DoneGlyphText = "";
-    private const string FailedGlyphText = "";
-    private const string FloatOpenGlyphText = "";
-    private const string FloatCloseGlyphText = "";
+    // Segoe Fluent Icons: Refresh, CheckMark, Cancel, OpenInNewWindow, BackToWindow. Escape
+    // sequences, not literals: the private-use characters are invisible in editors, and these
+    // five were once silently stripped to "" - a blank Float button and a vanishing Refresh.
+    private const string RefreshGlyphText = "\uE72C";
+    private const string DoneGlyphText = "\uE73E";
+    private const string FailedGlyphText = "\uE711";
+    private const string FloatOpenGlyphText = "\uE8A7";
+    private const string FloatCloseGlyphText = "\uE73F";
 
     private readonly RefreshButtonModel _refresh = new();
     private readonly Storyboard _spinner;
