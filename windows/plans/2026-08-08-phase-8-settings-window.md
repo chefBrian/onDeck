@@ -1791,7 +1791,10 @@ git commit -m "phase 8: verification results and phase 9 handoff"
 
 ## Deviations from the Swift original
 
-*(Filled in during execution. The entries below are the ones this plan commits to up front.)*
+*Executed 2026-08-08. Nothing diverged from the plan during execution — the list below is as
+written up front. Owner verified the window on Windows 11 build 26200: all seven manual checks
+passed (HANDOFF §8b), including readability in both themes on a live theme change, which is the
+one that caught 7b out.*
 
 | Deviation | Why |
 |---|---|

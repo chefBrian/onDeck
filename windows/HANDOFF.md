@@ -343,6 +343,13 @@ taskbar). Phase 7a rows kept; 7b rows appended:
 | **7b:** flyout grows to the monitor rather than scrolling at a fixed height | **Pass** |
 | **7b:** acrylic backdrop | **Fail, unresolved** — opaque until Refresh is pressed, then translucent; the panel is always opaque. See `ACRYLIC-OPEN-ISSUE.md` |
 | **7b:** floating panel opens, drags, persists its frame, auto-opens | **Not run** |
+| **8:** Settings opens from the footer gear (first in the row) and from the tray item | **Pass** |
+| **8:** text is readable on the cards in both Windows themes, repainting on a live theme change | **Pass** — no repeat of 7b's black-on-dark |
+| **8:** grouped-card layout and 13/10 pt type read against the Mac Settings pane | **Pass** |
+| **8:** team picker lists the league's teams with "Select a team..." first, and the stored team selected | **Pass** — against the live no-teamId league URL |
+| **8:** Sync Now → "Syncing…" → "Last synced: N seconds ago" + "N players loaded" | **Pass** |
+| **8:** Hide bench players re-filters the flyout immediately, no network sync | **Pass** |
+| **8:** closing Settings does not quit the app; the tray icon survives | **Pass** |
 
 ## 8c. Phase 8 status
 
