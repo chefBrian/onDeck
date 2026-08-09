@@ -48,19 +48,44 @@ public partial class FlyoutWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
+        ApplyBackdrop("init");
 
-        var source = (HwndSource)PresentationSource.FromVisual(this)!;
+        // A resize is the one thing observed to make the backdrop appear (hitting Refresh changes
+        // the row count, which resizes the window). Re-assert on every resize so we find out
+        // whether the resize or the repaint is the active ingredient.
+        SizeChanged += (_, _) => ApplyBackdrop("resize");
+    }
 
-        // Load-bearing: DWM draws the backdrop *behind* the window, so WPF's own render surface
-        // has to stop painting over it. Without this the acrylic is applied and invisible.
+    /// <summary>
+    /// Clears WPF's own opaque render surface and asks DWM for the acrylic backdrop.
+    /// <para>
+    /// Called on every open, not just at init, and that repetition is the fix rather than
+    /// belt-and-braces. <c>CompositionTarget.BackgroundColor</c> is a property of the composition
+    /// target, and <c>SizeToContent</c> makes the window resize right after
+    /// <c>OnSourceInitialized</c> — the target is rebuilt and comes back **opaque**, painting over
+    /// a backdrop DWM had already accepted. That is why the attribute always returned
+    /// <c>S_OK</c> while the flyout looked solid, and why re-rendering (hitting Refresh) made it
+    /// translucent. See <c>windows/ACRYLIC-OPEN-ISSUE.md</c>.
+    /// </para>
+    /// </summary>
+    private void ApplyBackdrop(string phase)
+    {
+        if (PresentationSource.FromVisual(this) is not HwndSource source) return;
+
+        var before = source.CompositionTarget.BackgroundColor;
         source.CompositionTarget.BackgroundColor = Colors.Transparent;
 
         var corners = DwmBackdrop.RoundCorners(source.Handle);
         var acrylic = DwmBackdrop.ApplyAcrylic(source.Handle);
 
+        // Setting the colour only affects the *next* render pass. Without forcing one, the
+        // surface keeps the opaque pixels from the paint that already happened - which is the
+        // difference between this and hitting Refresh, whose content change repaints anyway.
+        Root.InvalidateVisual();
+
         ShellLog.Append(
-            $"[Flyout] backdrop hresult=0x{acrylic:X8} corners=0x{corners:X8} "
-            + $"os={Environment.OSVersion.Version}");
+            $"[Flyout/{phase}] bgWas={before} size={ActualWidth:F0}x{ActualHeight:F0} "
+            + $"visible={IsVisible} hr=0x{acrylic:X8} corners=0x{corners:X8}");
 
         if (acrylic != 0)
         {
@@ -78,17 +103,30 @@ public partial class FlyoutWindow : Window
     {
         Render();
 
-        // Measure before placing: SizeToContent means Height is only real after a layout pass.
+        // Show first: the device-pixel to DIP conversion below needs a composition target, and
+        // there isn't one until the window has an hwnd.
         Show();
-        UpdateLayout();
 
         var workArea = WorkAreaFor(anchorDevicePixels);
+
+        // MenuBarView has no scroll view — the Mac window simply grows. Cap on the monitor
+        // instead of an arbitrary constant so scrolling only starts when the roster genuinely
+        // outgrows the screen, not at some fixed row count.
+        MaxHeight = Math.Max(200, workArea.Height - 16);
+
+        // Measure before placing: SizeToContent means Height is only real after a layout pass.
+        UpdateLayout();
+
         var anchor = ToAnchorRect(anchorDevicePixels, workArea);
 
         var placement = FlyoutPositioner.Place(anchor, workArea, new Size(Width, ActualHeight));
 
         Left = placement.X;
         Top = placement.Y;
+
+        // After the resize above, not before: the composition target has just been rebuilt and
+        // has reverted to an opaque background.
+        ApplyBackdrop("show");
 
         Activate();
     }

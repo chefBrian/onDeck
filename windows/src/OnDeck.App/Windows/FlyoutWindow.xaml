@@ -4,7 +4,6 @@
         xmlns:views="clr-namespace:OnDeck.App.Views"
         Width="300"
         SizeToContent="Height"
-        MaxHeight="640"
         WindowStyle="None"
         ResizeMode="NoResize"
         ShowInTaskbar="False"

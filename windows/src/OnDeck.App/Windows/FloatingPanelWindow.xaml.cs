@@ -56,18 +56,42 @@ public partial class FloatingPanelWindow : Window
 
         var source = (HwndSource)PresentationSource.FromVisual(this)!;
 
-        // Same backdrop treatment as the flyout, including the same open acrylic issue -
-        // see windows/ACRYLIC-OPEN-ISSUE.md before changing any of this.
+        // Extended styles first, backdrop second. SetWindowLong triggers a frame change, which
+        // can drop DWM attributes set before it - and the panel is the only window here that
+        // touches ex-styles, which is exactly where its backdrop behaviour diverges from the
+        // flyout's.
+        var style = GetWindowLong(source.Handle, GwlExStyle);
+        SetWindowLong(source.Handle, GwlExStyle, style | WsExNoActivate);
+
+        ApplyBackdrop("init");
+        SizeChanged += (_, _) => ApplyBackdrop("resize");
+    }
+
+    /// <summary>
+    /// Same backdrop treatment as the flyout, and re-applied on every open for the same reason:
+    /// <c>SizeToContent</c> rebuilds the composition target, which comes back opaque and paints
+    /// over a backdrop DWM already accepted. See <c>windows/ACRYLIC-OPEN-ISSUE.md</c>.
+    /// </summary>
+    private void ApplyBackdrop(string phase)
+    {
+        if (PresentationSource.FromVisual(this) is not HwndSource source) return;
+
+        var before = source.CompositionTarget.BackgroundColor;
         source.CompositionTarget.BackgroundColor = Colors.Transparent;
+
         DwmBackdrop.RoundCorners(source.Handle);
-        if (DwmBackdrop.ApplyAcrylic(source.Handle) != 0)
+        var acrylic = DwmBackdrop.ApplyAcrylic(source.Handle);
+
+        Root.InvalidateVisual();
+
+        ShellLog.Append(
+            $"[Panel/{phase}] bgWas={before} size={ActualWidth:F0}x{ActualHeight:F0} "
+            + $"visible={IsVisible} hr=0x{acrylic:X8}");
+
+        if (acrylic != 0)
         {
             Root.Background = new SolidColorBrush(Color.FromRgb(0x20, 0x20, 0x20));
         }
-
-        // Clicking the panel must not steal focus from whatever the user is actually doing.
-        var style = GetWindowLong(source.Handle, GwlExStyle);
-        SetWindowLong(source.Handle, GwlExStyle, style | WsExNoActivate);
     }
 
     public void Toggle()
@@ -81,6 +105,8 @@ public partial class FloatingPanelWindow : Window
         Render();
         RestoreFrame();
         Show();
+        UpdateLayout();
+        ApplyBackdrop("show");
     }
 
     private void Render()

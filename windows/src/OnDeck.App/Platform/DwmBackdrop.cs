@@ -30,6 +30,17 @@ public static class DwmBackdrop
     [DllImport("dwmapi.dll")]
     private static extern int DwmExtendFrameIntoClientArea(IntPtr window, ref Margins margins);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(
+        IntPtr window, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
+
+    private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoMove = 0x0002;
+    private const uint SwpNoZOrder = 0x0004;
+    private const uint SwpFrameChanged = 0x0020;
+    private const uint SwpNoActivate = 0x0010;
+
     /// <summary>HRESULT; 0 means the backdrop took.</summary>
     public static int ApplyAcrylic(IntPtr handle)
     {
@@ -39,7 +50,17 @@ public static class DwmBackdrop
         DwmExtendFrameIntoClientArea(handle, ref margins);
 
         var value = TransientWindow;
-        return DwmSetWindowAttribute(handle, SystemBackdropType, ref value, sizeof(int));
+        var result = DwmSetWindowAttribute(handle, SystemBackdropType, ref value, sizeof(int));
+
+        // DWM recalculates a window's frame on a frame change, not on a WPF repaint. Both
+        // attributes above return S_OK and still composite nothing until that happens - which is
+        // why resizing the window (what hitting Refresh does, by changing the row count) was the
+        // only thing that made the acrylic appear. This is that resize without the resize.
+        SetWindowPos(
+            handle, IntPtr.Zero, 0, 0, 0, 0,
+            SwpNoMove | SwpNoSize | SwpNoZOrder | SwpNoActivate | SwpFrameChanged);
+
+        return result;
     }
 
     /// <summary>HRESULT; 0 means the corners were rounded.</summary>
