@@ -3,6 +3,7 @@ using System.Windows;
 using OnDeck.App.Notifications;
 using OnDeck.App.Platform;
 using OnDeck.App.Tray;
+using OnDeck.App.Views;
 using OnDeck.App.Windows;
 using OnDeck.Core;
 using OnDeck.Core.Managers;
@@ -15,6 +16,7 @@ public partial class App : Application
 {
     private SingleInstance? _singleInstance;
     private TrayIconService? _tray;
+    private ThemeWatcher? _theme;
     private FlyoutWindow? _flyout;
     private AppOrchestrator? _orchestrator;
 
@@ -52,6 +54,10 @@ public partial class App : Application
             settings,
             new LoggingNotificationSink());
 
+        _theme = new ThemeWatcher();
+        _theme.Changed += ApplyPalette;
+        ApplyPalette();
+
         _tray = new TrayIconService(_orchestrator);
         _tray.OpenRequested += () => OpenFlyout(TrayGeometry.CursorPosition());
         _tray.RefreshRequested += () => _ = _orchestrator.ResyncRosterAsync();
@@ -61,6 +67,12 @@ public partial class App : Application
 
         _ = _orchestrator.StartAsync();
     }
+
+    /// <summary>
+    /// Republishes the <c>OnDeck.*</c> brushes for the current app theme. Every window binds
+    /// them with <c>DynamicResource</c>, so a live theme change repaints in place.
+    /// </summary>
+    private void ApplyPalette() => ThemePalette.For(_theme!.AppsUseLightTheme).ApplyTo(Resources);
 
     private void OpenFlyout(Point? anchorDevicePixels)
     {
@@ -78,6 +90,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         _tray?.Dispose();
+        _theme?.Dispose();
         _singleInstance?.Dispose();
         base.OnExit(e);
     }
