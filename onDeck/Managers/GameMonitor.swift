@@ -46,6 +46,11 @@ final class GameMonitor {
     /// Callback fired once per game the first time it transitions to Live/In Progress.
     var onGameStart: ((Int) -> Void)?
 
+    /// True while `processFeed` is applying a game's first feed since monitoring (re)started.
+    /// State transitions raised during it replay what was already announced live - AppState
+    /// seeds them without notifying.
+    private(set) var isSeedingFeed = false
+
     /// Whether the feed has observed this game as Live/In Progress. Driven by the feed, not the clock,
     /// so late-starting games aren't misclassified.
     func isLive(gamePk: Int) -> Bool {
@@ -301,7 +306,12 @@ final class GameMonitor {
             return
         }
 
-        if liveGamesSeen.insert(gamePk).inserted {
+        // First feed since monitoring (re)started - launch, manual refresh, resync. It replays
+        // states that were already announced when they happened live, so AppState checks this
+        // flag to seed silently instead of re-notifying whoever is currently up. Cleared at
+        // the end of this method; transitions only fire inside it, synchronously.
+        isSeedingFeed = liveGamesSeen.insert(gamePk).inserted
+        if isSeedingFeed {
             onGameStart?(gamePk)
         }
 
@@ -429,6 +439,25 @@ final class GameMonitor {
             }
         }
 
+        // Same catch-all for hitters: the boxscore batting order holds only the current nine
+        // per side, so a roster hitter with a batting line who is in neither order has been
+        // substituted out. The stats check also anchors this to the feed's own game - other
+        // games' players have no stats here. Skipped while either order is empty: transitional
+        // feeds blank the arrays, and judging against half a lineup subs out the wrong side.
+        if !feed.homeBattingOrder.isEmpty && !feed.awayBattingOrder.isEmpty {
+            for id in rosterPlayerIDs {
+                guard !feed.homeBattingOrder.contains(id),
+                      !feed.awayBattingOrder.contains(id),
+                      feed.playerStats[id]?.batting?.formatted != nil,
+                      let player = rosterPlayers[id],
+                      player.isHitter else { continue }
+                let currentState = stateManager?.playerStates[id]
+                if case .inactive(.substituted) = currentState { continue }
+                if case .active = currentState { continue }
+                stateManager?.update(playerID: id, state: .inactive(reason: .substituted(gamePk: gamePk)))
+            }
+        }
+
         // Store completed play results for notifications
         if feed.isPlayComplete, let desc = feed.lastPlayDescription {
             if let batterID = feed.currentBatterID, rosterPlayerIDs.contains(batterID) {
@@ -441,6 +470,8 @@ final class GameMonitor {
 
         lastBatterID[gamePk] = feed.currentBatterID
         lastPitcherID[gamePk] = feed.currentPitcherID
+
+        isSeedingFeed = false
     }
 
     // MARK: - Helpers

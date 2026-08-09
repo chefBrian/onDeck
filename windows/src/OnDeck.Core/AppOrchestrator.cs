@@ -542,6 +542,10 @@ public sealed class AppOrchestrator
         {
             case PlayerState.Active { Context: var context } when oldState is not PlayerState.Active:
             {
+                // A monitor (re)start - launch, manual refresh, resync - replays who is
+                // already up. Those were toasted when they happened live; seed silently.
+                if (_monitor.IsSeedingFeed) break;
+
                 var gameString = FormatGameString(context);
                 var streamUrl = StreamUrlFor(context.GamePk);
 

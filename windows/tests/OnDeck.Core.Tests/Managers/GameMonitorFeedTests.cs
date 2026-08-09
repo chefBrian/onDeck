@@ -239,6 +239,93 @@ public class GameMonitorFeedTests
     }
 
     [Fact]
+    public void ProcessFeed_CatchAllSubstitutesHittersRemovedFromTheOrder()
+    {
+        // Mirror of the pitcher catch-all: the boxscore batting order holds only the current
+        // nine per side, so a roster hitter who batted but is in neither order was substituted.
+        var (monitor, states) = Started(Hitter(10));
+
+        var feed = LiveFeed(batter: 11);
+        feed.HomeBattingOrder = [11, 12];
+        feed.AwayBattingOrder = [20];
+        feed.PlayerStats[10] = new PlayerGameStats
+        {
+            Batting = new PlayerBattingStats { AtBats = 2, Hits = 1 },
+        };
+        monitor.ProcessFeed(feed, 1, GameAt(1, Now));
+
+        var inactive = Assert.IsType<PlayerState.Inactive>(states.PlayerStates[10]);
+        Assert.Equal(1, Assert.IsType<PlayerState.InactiveReason.Substituted>(inactive.Reason).GamePk);
+    }
+
+    [Fact]
+    public void ProcessFeed_CatchAllSkipsHittersWithoutAStatLine()
+    {
+        // Never batted (e.g. genuinely not in today's lineup) - stays put, no DONE row.
+        var (monitor, states) = Started(Hitter(10));
+
+        var feed = LiveFeed(batter: 11);
+        feed.HomeBattingOrder = [11, 12];
+        feed.AwayBattingOrder = [20];
+        monitor.ProcessFeed(feed, 1, GameAt(1, Now));
+
+        Assert.False(states.PlayerStates.ContainsKey(10));
+    }
+
+    [Fact]
+    public void ProcessFeed_CatchAllSkipsHittersStillInTheOrder()
+    {
+        var (monitor, states) = Started(Hitter(10));
+
+        var feed = LiveFeed(batter: 11);
+        feed.HomeBattingOrder = [10, 11];
+        feed.AwayBattingOrder = [20];
+        feed.PlayerStats[10] = new PlayerGameStats
+        {
+            Batting = new PlayerBattingStats { AtBats = 2, Hits = 1 },
+        };
+        monitor.ProcessFeed(feed, 1, GameAt(1, Now));
+
+        Assert.False(states.PlayerStates.ContainsKey(10));
+    }
+
+    [Fact]
+    public void ProcessFeed_CatchAllLeavesHittersAloneWhileAnOrderIsEmpty()
+    {
+        // diffPatch phase transitions can hand us a feed with a blanked order; judging
+        // membership against half a lineup would sub out everyone on the missing side.
+        var (monitor, states) = Started(Hitter(10));
+
+        var feed = LiveFeed(batter: 11);
+        feed.HomeBattingOrder = [11, 12];
+        feed.AwayBattingOrder = [];
+        feed.PlayerStats[10] = new PlayerGameStats
+        {
+            Batting = new PlayerBattingStats { AtBats = 2, Hits = 1 },
+        };
+        monitor.ProcessFeed(feed, 1, GameAt(1, Now));
+
+        Assert.False(states.PlayerStates.ContainsKey(10));
+    }
+
+    [Fact]
+    public void ProcessFeed_CatchAllDoesNotClobberAnActiveHitter()
+    {
+        var (monitor, states) = Started(Hitter(10));
+
+        var feed = LiveFeed(batter: 10);
+        feed.HomeBattingOrder = [11, 12];
+        feed.AwayBattingOrder = [20];
+        feed.PlayerStats[10] = new PlayerGameStats
+        {
+            Batting = new PlayerBattingStats { AtBats = 2, Hits = 1 },
+        };
+        monitor.ProcessFeed(feed, 1, GameAt(1, Now));
+
+        Assert.IsType<PlayerState.Active>(states.PlayerStates[10]);
+    }
+
+    [Fact]
     public void ProcessFeed_StoresCompletedPlayDescriptionsForRosterPlayers()
     {
         var (monitor, _) = Started(Hitter(10), Pitcher(30));

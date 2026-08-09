@@ -53,6 +53,46 @@ public class AppOrchestratorTransitionTests
         });
     }
 
+    private static LiveFeedData FeedWithBatter(int? batterId) => new()
+    {
+        GameState = "Live",
+        DetailedState = "In Progress",
+        CurrentBatterId = batterId,
+        Inning = 3,
+        InningHalf = "Bot",
+        HomeTeam = "Los Angeles Dodgers",
+        AwayTeam = "San Francisco Giants",
+        HomeTeamId = 119,
+        AwayTeamId = 137,
+    };
+
+    [Fact]
+    public void Transition_FirstFeedOfAGameSeedsSilentlyThenLaterTransitionsNotify()
+    {
+        // A monitor (re)start - launch, manual refresh, resync - replays who is already up.
+        // Those were announced when they happened live; re-toasting them on every restart is
+        // the double-notification the first feed must swallow.
+        var harness = Harness();
+        var game = OrchestratorHarness.GameOf(1, FirstPitch, exclusiveCallSign: "Peacock");
+
+        harness.RunStarted(async app =>
+        {
+            harness.Monitor.ProcessFeed(FeedWithBatter(101), 1, game);
+            await SingleThreadedContext.Settle();
+
+            Assert.DoesNotContain(
+                harness.Sink.Calls, call => call.StartsWith("batting:", StringComparison.Ordinal));
+
+            // Batter steps out, then a fresh at-bat begins - the live transition still toasts.
+            harness.Monitor.ProcessFeed(FeedWithBatter(null), 1, game);
+            harness.Monitor.ProcessFeed(FeedWithBatter(101), 1, game);
+            await SingleThreadedContext.Settle();
+
+            Assert.Single(
+                harness.Sink.Calls, call => call.StartsWith("batting:", StringComparison.Ordinal));
+        });
+    }
+
     [Fact]
     public void Transition_ActiveToActiveDoesNotResend()
     {

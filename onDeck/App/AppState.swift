@@ -211,11 +211,16 @@ final class AppState {
             guard let self else { return }
             self.schedulePlayerListRebuild()
 
+            // Captured before the Task hop: the seeding flag is only valid synchronously
+            // inside GameMonitor.processFeed, and the transition runs after it returns.
+            let isSeeding = self.gameMonitor.isSeedingFeed
+
             Task { @MainActor in
                 await self.handleStateTransition(
                     playerID: playerID,
                     oldState: oldState,
-                    newState: newState
+                    newState: newState,
+                    isSeeding: isSeeding
                 )
             }
         }
@@ -395,7 +400,9 @@ final class AppState {
         return ctx.role == role
     }
 
-    private func handleStateTransition(playerID: Int, oldState: PlayerState?, newState: PlayerState) async {
+    private func handleStateTransition(
+        playerID: Int, oldState: PlayerState?, newState: PlayerState, isSeeding: Bool = false
+    ) async {
         guard let player = rosterManager.players.first(where: { $0.id == playerID }) else { return }
         if player.isUnavailable { return }
         if hideBenchPlayers && player.isOnBench { return }
@@ -406,7 +413,9 @@ final class AppState {
             let wasActive: Bool
             if case .active = oldState { wasActive = true } else { wasActive = false }
 
-            if !wasActive {
+            // A monitor (re)start - launch, manual refresh, resync - replays who is
+            // already up. Those were announced when they happened live; seed silently.
+            if !wasActive && !isSeeding {
                 let gameString = formatGameString(context: context)
                 let streamURL = streamURL(for: context.gamePk)
                 switch context.role {

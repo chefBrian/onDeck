@@ -61,6 +61,13 @@ public sealed class GameMonitor(MlbStatsApi mlb, TimeProvider? timeProvider = nu
     public Action<int>? OnGameStart { get; set; }
 
     /// <summary>
+    /// True while <c>ProcessFeed</c> is applying a game's first feed since monitoring
+    /// (re)started. State transitions raised during it replay what was already announced
+    /// live - the orchestrator seeds them without toasting.
+    /// </summary>
+    public bool IsSeedingFeed { get; private set; }
+
+    /// <summary>
     /// Whether the feed has observed this game as Live/In Progress. Driven by the feed, not
     /// the clock, so late-starting games aren't misclassified.
     /// </summary>
@@ -398,7 +405,12 @@ public sealed class GameMonitor(MlbStatsApi mlb, TimeProvider? timeProvider = nu
 
         if (feed.GameState != "Live" || !isPlayable) return;
 
-        if (_liveGamesSeen.Add(gamePk)) OnGameStart?.Invoke(gamePk);
+        // First feed since monitoring (re)started - launch, manual refresh, resync. It replays
+        // states that were already announced when they happened live, so the orchestrator
+        // checks this flag to seed silently instead of re-toasting whoever is currently up.
+        // Cleared at the end of this method; transitions only fire inside it, synchronously.
+        IsSeedingFeed = _liveGamesSeen.Add(gamePk);
+        if (IsSeedingFeed) OnGameStart?.Invoke(gamePk);
 
         // Between half-innings, currentBatter/currentPitcher are stale holdovers from the last
         // play of the previous half-inning - MLB doesn't clear them until play resumes.
@@ -516,6 +528,29 @@ public sealed class GameMonitor(MlbStatsApi mlb, TimeProvider? timeProvider = nu
             }
         }
 
+        // Same catch-all for hitters: the boxscore batting order holds only the current nine
+        // per side, so a roster hitter with a batting line who is in neither order has been
+        // substituted out. The stats check also anchors this to the feed's own game - other
+        // games' players have no stats here. Skipped while either order is empty: transitional
+        // feeds blank the arrays, and judging against half a lineup subs out the wrong side.
+        if (feed.HomeBattingOrder.Count > 0 && feed.AwayBattingOrder.Count > 0)
+        {
+            foreach (var id in _rosterPlayerIds)
+            {
+                if (feed.HomeBattingOrder.Contains(id) || feed.AwayBattingOrder.Contains(id)) continue;
+                if (feed.PlayerStats.GetValueOrDefault(id)?.Batting?.Formatted is null) continue;
+                if (!_rosterPlayers.TryGetValue(id, out var player)) continue;
+                if (!player.IsHitter) continue;
+
+                var currentState = _stateManager?.PlayerStates.GetValueOrDefault(id);
+                if (currentState is PlayerState.Inactive { Reason: PlayerState.InactiveReason.Substituted }) continue;
+                if (currentState is PlayerState.Active) continue;
+
+                _stateManager?.Update(
+                    id, new PlayerState.Inactive(new PlayerState.InactiveReason.Substituted(gamePk)));
+            }
+        }
+
         // Store completed play results for notifications.
         if (feed.IsPlayComplete && feed.LastPlayDescription is { } description)
         {
@@ -532,6 +567,8 @@ public sealed class GameMonitor(MlbStatsApi mlb, TimeProvider? timeProvider = nu
 
         _lastBatterId[gamePk] = feed.CurrentBatterId;
         _lastPitcherId[gamePk] = feed.CurrentPitcherId;
+
+        IsSeedingFeed = false;
     }
 
     private static string LastWord(string teamName)
