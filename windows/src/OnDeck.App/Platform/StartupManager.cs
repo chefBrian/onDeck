@@ -56,7 +56,11 @@ public sealed class StartupManager(string? keyPath = null, string? executablePat
                 key?.DeleteValue(ValueName, throwOnMissingValue: false);
             }
 
-            ShellLog.Append($"[Startup] launch at login {(enabled ? "enabled" : "disabled")}");
+            // The key path is in the line because the tests share this log: they write to a
+            // scratch key, and without it a test run leaves "launch at login enabled" in the
+            // app's own diagnostics looking like the app did it.
+            ShellLog.Append(
+                $"[Startup] launch at login {(enabled ? "enabled" : "disabled")} in {_keyPath}");
         }
         catch (Exception exception) when (exception is UnauthorizedAccessException or IOException
                                               or System.Security.SecurityException)
