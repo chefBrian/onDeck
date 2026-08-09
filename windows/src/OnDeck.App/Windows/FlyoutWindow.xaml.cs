@@ -29,10 +29,20 @@ public partial class FlyoutWindow : Window
     {
         base.OnSourceInitialized(e);
 
-        var handle = new WindowInteropHelper(this).Handle;
-        DwmBackdrop.RoundCorners(handle);
+        var source = (HwndSource)PresentationSource.FromVisual(this)!;
 
-        if (!DwmBackdrop.TryApplyAcrylic(handle))
+        // Load-bearing: DWM draws the backdrop *behind* the window, so WPF's own render surface
+        // has to stop painting over it. Without this the acrylic is applied and invisible.
+        source.CompositionTarget.BackgroundColor = Colors.Transparent;
+
+        var corners = DwmBackdrop.RoundCorners(source.Handle);
+        var acrylic = DwmBackdrop.ApplyAcrylic(source.Handle);
+
+        ShellLog.Append(
+            $"[Flyout] backdrop hresult=0x{acrylic:X8} corners=0x{corners:X8} "
+            + $"os={Environment.OSVersion.Version}");
+
+        if (acrylic != 0)
         {
             // Older Win11 builds refuse the backdrop attribute - paint something opaque so the
             // flyout is never an unreadable transparent rectangle.

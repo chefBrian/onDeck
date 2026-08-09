@@ -175,13 +175,48 @@ Each phase plan has its own list; the ones with ongoing consequences:
 `GameMonitor` (`TrackGames`, `NextEventDelay`, `SelectGamesToPoll`, `PollSingleGameAsync`,
 `ProcessFeed`), `DisplayRules` (the whole class), and `AppOrchestrator.TimeUntilNextEightAm`.
 
-## 9. Next up — Phase 7: Flyout UI + floating panel
+## 8b. Phase 7a status (done) and the one open issue
+
+**Phase 7a is complete and committed:** the flyout now uses the work area of the monitor holding
+the tray (`Platform/MonitorWorkArea.cs`), `TeamLogoCache` is in Core beside `HeadshotCache`, and
+`Views/DisplayFormatting.cs` holds the dot / glyph / badge / trailing-text rules from
+`MenuBarView.swift`. 543 tests green. Plan: `plans/2026-08-08-phase-7a-flyout-foundations.md`.
+
+**Open, cosmetic, do not let it block 7b:** the flyout backdrop renders opaque instead of acrylic.
+Full write-up, everything already tried, and a warning about the unreliable screen-capture
+verification method: **`windows/ACRYLIC-OPEN-ISSUE.md`**. Read it before touching the backdrop —
+one plausible-looking fix (removing `ThemeMode="System"`) was tried, wrongly believed to work, and
+reverted.
+
+**Manual verification results, 2026-08-08** (Windows 11 build 26200, single monitor, bottom
+taskbar):
+
+| Check | Result |
+|---|---|
+| Tray icon appears; flyout opens anchored to it; light-dismiss; context menu | **Pass** |
+| Icon swaps white↔dark on a live Windows theme change, no restart | **Pass** — `ThemeWatcher`'s change path is now exercised |
+| Second launch adds no second tray icon (exits code 0, one instance remains) | **Pass** |
+| Acrylic backdrop | **Fail** — see `ACRYLIC-OPEN-ISSUE.md` |
+| Second monitor | **Not testable** — no second display on this machine. The code fix is in but unverified |
+| Display scaling 100/125/150/200%; docked taskbar edges; Quit from the menu | **Not run** |
+
+## 9. Next up — Phase 7b: the flyout's real content
 
 *(Windows PC. Phases 7–11 need a human at the keyboard for the manual Win11 checks.)*
 
 **Spec:** `onDeck/Views/MenuBarView.swift`. The sorting and filter rules are already ported and
 tested in Core (`DisplayRules`, `AppOrchestrator`) — Phase 7 is presentation only. Every row field
 the Swift view reads is already resolved onto `PlayerDisplay`; do not recompute any of it in XAML.
+`Views/DisplayFormatting.cs` (Phase 7a) already maps those fields to dots, glyphs and badges.
+
+**Write a 7b plan first**, per the workflow in §2. Phase 7 was split because one plan covering both
+halves would have padded the XAML half with vague instructions; 7a was the testable foundations
+and is done.
+
+**Correction to `PORT_PLAN.md`:** its Phase 7 row says the row control shows a *headshot*. It does
+not — `MenuBarView.swift` renders team logos in the score block and no player headshots at all.
+`HeadshotCache` exists for notification images only. The parity-checklist line about headshots in
+the flyout and floating panel is wrong.
 
 Build: `PlayerRow` control (headshot, name, state dot, `StatLine`), UPCOMING / IN GAME / DONE
 sections, PPD label, rain/delay icon from `PlayerDisplay.Delay` + tooltip, stream-link click →
