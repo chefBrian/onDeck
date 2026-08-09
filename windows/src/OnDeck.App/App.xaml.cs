@@ -58,7 +58,7 @@ public partial class App : Application
             new StateManager(),
             fantrax,
             settings,
-            new LoggingNotificationSink());
+            new ToastService(settings, headshots, new WindowsToastPresenter()));
 
         _theme = new ThemeWatcher();
         _theme.Changed += ApplyPalette;
