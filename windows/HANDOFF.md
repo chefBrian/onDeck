@@ -4,9 +4,14 @@
 
 **State:** `OnDeck.Core` is **complete** and the shell has its **real UI** — tray icon, flyout with
 the four player sections and footer, floating panel with a persisted frame, settings on disk, all
-driven by the real engine. 597 tests green (508 Core + 89 App), working tree clean, single-file
+driven by the real engine. **598 tests green (509 Core + 89 App)**, working tree clean, single-file
 publish verified. The toast spike passed, so Phase 9's stack is settled. Phase 8 is the Settings
 window.
+
+**Phase 7b was the first time the shell ran against live data**, and it flushed out two bugs that
+no test could have caught (§7b, §8b). The app has been run end to end against a real Fantrax roster
+on a live game day and renders correctly. One cosmetic issue is open and parked by owner decision:
+the acrylic backdrop (`ACRYLIC-OPEN-ISSUE.md`).
 
 ---
 
@@ -19,8 +24,11 @@ window.
    locally but will not be on a fresh clone). Holds the gotchas the port must preserve.
 3. The Swift source for the phase you're on. **The Swift file named in each phase is the
    authoritative spec** — read it before writing anything.
-4. `windows/plans/*.md` — the five executed phase plans (Phases 0–5). Each has a "Deviations"
-   section recording where the C# port intentionally differs from Swift and why.
+4. `windows/plans/*.md` — the executed phase plans (Phases 0–7b). Each has a "Deviations" section
+   recording where the C# port intentionally differs from Swift and why, and 7b also has an
+   "Execution notes" section for corrections found while running the plan.
+5. `windows/ACRYLIC-OPEN-ISSUE.md` — **only** if you intend to touch the flyout/panel backdrop.
+   Two sessions have failed at it; the document exists to stop a third from repeating them.
 
 ## 2. Workflow in use
 
@@ -61,13 +69,31 @@ dotnet publish windows/src/OnDeck.App -c Release -r win-x64 --self-contained \
 Note: a bare `dotnet test` from the repo root fails — there's no project there. Always pass the
 solution or project path.
 
+**Kill the app before building or testing.** A running `OnDeck.App.exe` holds a lock on
+`OnDeck.Core.dll`, so `OnDeck.App.Tests` fails to build — and `dotnet test` still exits after
+reporting **`Passed!` for `OnDeck.Core.Tests` alone**, which reads exactly like a green run. The
+`MSB3027`/`MSB3021` copy errors are buried above it. Always check that **two** `Passed!` lines came
+back, one per test project:
+
+```bash
+powershell -NoProfile -Command "Get-Process -Name 'OnDeck.App' -ErrorAction SilentlyContinue | Stop-Process -Force"
+dotnet test windows/OnDeck.slnx 2>&1 | grep -E "Passed!|Failed!|error MSB"
+```
+
 ## 4. User preferences (standing)
 
 - **Never append `Co-Authored-By` or any AI-attribution trailer to commits.** Global rule.
 - Work is committed **directly to `main`**, no feature branch.
 - `CLAUDE.md` says "Don't build or deploy for the user". That is scoped to the **macOS Xcode app**
   (it sits among the `xcodebuild` / `/Applications` commands). Running `dotnet build`/`test` for the
-  port is expected — TDD can't verify anything otherwise. Don't launch or install the Windows app.
+  port is expected — TDD can't verify anything otherwise.
+- **Launching the built Windows app locally to verify is allowed; installing it is not.** Run it
+  from `bin/Debug/net10.0-windows/`. Phase 7b did this routinely and it is how both live bugs were
+  found. Kill it again before the next build (§3).
+- **Don't trust automated screen capture for visual checks.** It produced confidently wrong
+  conclusions in Phase 7a. Ask the owner to look — that is how the acrylic Refresh clue surfaced.
+  A useful trick: launching the exe a second time makes the running instance open the flyout
+  (`SingleInstance.SignalExistingInstance`), so you can exercise the render path without clicking.
 
 ## 5. What's built
 
@@ -135,7 +161,7 @@ the last once drained). `FakeTimeProvider` for anything clock-driven. Tests asse
 POST bodies**, not just response parsing — the `hydrate` terms, timecode formats and the Fantrax
 `period` param are what break silently.
 
-### Four traps that already bit
+### Four traps that already bit (engine)
 
 1. **`Uri.ToString()` unescapes for display.** Assert percent-encoding against `AbsoluteUri`.
 2. **Raw string literals:** JSON fixtures with `}}` runs collide with `$$"""…{{x}}…"""`
@@ -146,6 +172,26 @@ POST bodies**, not just response parsing — the `hydrate` terms, timecode forma
    to a request with no UA at all — it doesn't inspect the value, only its presence. Every roster
    sync failed until `FantraxApi` set one. Any platform difference where macOS supplies a default
    that .NET does not is a candidate for this class of bug. See §7b.
+
+### XAML traps from Phase 7b
+
+These are all **silent** — they compile, run, and look merely "a bit off":
+
+1. **An explicit `Style` on a control replaces the Fluent theme's implicit style wholesale.**
+   `RowButton` set `Template` but not `Foreground`, so `Foreground` fell back to `Control`'s
+   default (`SystemColors.ControlTextBrush`, black) and every run inheriting it — player name,
+   both scores, the count — rendered black on the dark flyout. **If you style a control, set
+   `Foreground` on the style.**
+2. **Segoe UI has no Medium weight.** `FontWeight="Medium"` silently falls back to Regular, so text
+   meant to match Swift's SF Pro Medium renders a weight light. Use the `UiFont` resource
+   (`Segoe UI Variable Text, Segoe UI`), which has real Medium and SemiBold.
+3. **SwiftUI `.caption` is 10pt on macOS, not 11.** `.body` (the default for an unadorned `Text`)
+   is 13. Both were wrong in the first cut of the templates. When porting a Swift view, translate
+   every `.font()` explicitly rather than letting WPF's default 12 stand in.
+4. **`<DataTemplate.Triggers>` must be a direct child of `DataTemplate`**, a sibling of the root
+   element — not nested inside it. Nesting gives `MC3015` at build time.
+5. **Don't rely on inherited `Foreground` inside a templated control** (see 1). Every text run in
+   `FlyoutContent.xaml` sets its own.
 
 ## 7. Bug found and fixed during the port
 
@@ -247,8 +293,14 @@ Each phase plan has its own list; the ones with ongoing consequences:
 `RowViewModels`, `FlyoutSections`, `RefreshButtonModel`, `TeamLogoStore` — under two XAML views,
 `FlyoutContent` (shared verbatim by both windows) and `FooterBar`, plus `FloatingPanelWindow` with
 a persisted frame. **XAML holds no logic**: templates bind plain record properties, and there is
-not a single `IValueConverter` in the shell. 597 tests green. Plan:
+not a single `IValueConverter` in the shell. 598 tests green. Plan:
 `plans/2026-08-08-phase-7b-flyout-content.md`.
+
+**7b also carried a visual-parity pass after the owner compared it side by side with the Mac app.**
+Every fix in it was traced to a specific line of `MenuBarView.swift` rather than to taste — the
+type sizes, the Segoe-UI-has-no-Medium fallback, the black `Foreground` inheritance, and the
+hardcoded `MaxHeight` that forced scrolling. See the XAML traps in §6; that list is the durable
+part.
 
 **Open, cosmetic, now two sessions deep:** the backdrop renders opaque instead of acrylic.
 **`windows/ACRYLIC-OPEN-ISSUE.md` was rewritten at the end of 7b** because its central premise was
@@ -314,6 +366,22 @@ worse than one that isn't there yet:
 2. The **Settings item in the tray context menu** (`Tray/TrayIconService.cs`), between Float and
    Refresh, mirroring the existing `FloatRequested` wiring.
 
+**What Phase 8 can reuse rather than reinvent:**
+
+- `ThemePalette` publishes the `OnDeck.*` brushes app-wide; bind `{DynamicResource}` to those and
+  read the XAML traps in §6 before styling any control.
+- `RefreshButtonModel` already implements idle→spinning→done/failed→idle over
+  `ResyncRosterAsync`; Sync Now is the same machine with a different presentation.
+- `AppOrchestrator` already exposes everything the window needs: `AvailableTeams`,
+  `IsLoadingTeams`, `TeamsError`, `IsSyncing`, `LastSyncDate`, `SyncError`, `LoadedPlayerCount`,
+  `ParsedLeagueId`, `UrlHasTeamId`, `EffectiveTeamId`, and `FetchTeamsAsync`. Don't add to Core.
+- Keep the testable logic in a plain class with tests in `OnDeck.App.Tests` and let the XAML bind
+  to it — that split is what made 7b's rules verifiable, and the untested XAML is exactly where
+  7b's visual bugs lived.
+
+**Unlike Phase 7b, Phase 8 is fully self-verifiable**: the settings window is reachable and
+exercisable without a live game. The manual checks that need a human are the visual ones.
+
 **Correction to `PORT_PLAN.md`:** its Phase 7 row says the row control shows a *headshot*. It does
 not — `MenuBarView.swift` renders team logos in the score block and no player headshots at all, and
 that is what shipped. `HeadshotCache` exists for notification images only. The parity-checklist line
@@ -329,6 +397,20 @@ about headshots in the flyout and floating panel is wrong.
    anyway, so the fallback never fires. Still open — `ACRYLIC-OPEN-ISSUE.md`.
 4. **Double-launch.** *Verified in 7b* — second launch exits 0 and one instance remains.
 5. Still not run: display scaling 100/125/150/200%, docked taskbar edges, Quit leaving no process.
+
+### Outstanding QA carried into Phase 8
+
+Built but never exercised by a human. None of it blocks Phase 8; roll it into the next manual pass:
+
+- **Floating panel behaviour end to end** — opens from Float (footer *and* tray), stays on top,
+  does not steal focus, drags by background, remembers its frame across a restart, auto-opens when
+  `alwaysOpenPopout` is true. Only its opaque backdrop has been observed.
+- **UPCOMING and DONE sections against live data** — seen briefly and looked right, but the badge
+  states (red dot / green tick / batting-order number) and the PPD label have not been checked
+  against a game that is actually postponed or has a filed lineup card.
+- **Stream-link click** → opens the right service per `StreamLinkRouter`.
+- **Hover states, and the flyout at 125/150/200% scaling.**
+- Display scaling, docked taskbar edges, second monitor, Quit leaving no process (from Phase 6).
 
 ### What the shell must honour when it wires up Core
 
@@ -365,7 +447,11 @@ this; copy its csproj settings.
 ## 11. Verification before claiming a phase done
 
 ```bash
-dotnet test windows/OnDeck.slnx          # expect: Failed: 0
+# Kill the app first - a running instance locks OnDeck.Core.dll and OnDeck.App.Tests
+# then silently fails to build while the run still prints Passed! for Core alone (§3).
+powershell -NoProfile -Command "Get-Process -Name 'OnDeck.App' -ErrorAction SilentlyContinue | Stop-Process -Force"
+
+dotnet test windows/OnDeck.slnx          # expect: TWO "Passed!" lines, Failed: 0 on both
 dotnet publish windows/src/OnDeck.App -c Release -r win-x64 --self-contained \
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
   -p:EnableCompressionInSingleFile=true
@@ -375,3 +461,8 @@ git status --short                       # expect: clean
 
 Then update the phase plan's Deviations section with anything that diverged from the Swift original,
 and append the phase's row to §8 of this file.
+
+**Run the app and look at it before calling a UI phase done.** Phase 7b passed every automated gate
+above while the flyout still had black-on-black text, a weight-too-light font and premature
+scrolling — none of which any test could see. The automated gates prove the engine; only a human
+proves the shell.
