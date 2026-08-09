@@ -1,0 +1,174 @@
+<Window x:Class="OnDeck.App.Windows.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="onDeck Settings"
+        Width="480" Height="760" MinWidth="450" MinHeight="720"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource OnDeck.Surface}"
+        TextElement.Foreground="{DynamicResource OnDeck.Text.Primary}"
+        TextElement.FontSize="13"
+        TextOptions.TextFormattingMode="Ideal">
+    <Window.Resources>
+
+        <!-- Segoe UI Variable carries real Medium and SemiBold weights; plain "Segoe UI" has no
+             Medium at all, so FontWeight="Medium" silently falls back to Regular. -->
+        <FontFamily x:Key="UiFont">Segoe UI Variable Text, Segoe UI</FontFamily>
+
+        <!-- Every keyed style below sets its own Foreground or Background. A style that omits it
+             takes the control back to SystemColors defaults (black), which is invisible on the
+             dark surface and gives no build or runtime error. For the same reason there is no
+             style at all on CheckBox, Button, TextBox or ComboBox - an explicit style would
+             replace the Fluent theme's implicit one wholesale. -->
+
+        <Style x:Key="SectionHeader" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource OnDeck.Text.Primary}" />
+            <Setter Property="Margin" Value="4,18,0,6" />
+        </Style>
+
+        <!-- SwiftUI .formStyle(.grouped): raised cards on a recessed window. -->
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource OnDeck.Surface.Card}" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="14,10" />
+        </Style>
+
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="{DynamicResource OnDeck.Text.Primary}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <!-- SwiftUI .caption is 10 pt on macOS, not 11. -->
+        <Style x:Key="Caption" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Foreground" Value="{DynamicResource OnDeck.Text.Secondary}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,6,0,0" />
+        </Style>
+
+        <Style x:Key="ErrorCaption" TargetType="TextBlock" BasedOn="{StaticResource Caption}">
+            <Setter Property="Foreground" Value="{DynamicResource OnDeck.Accent.Red}" />
+        </Style>
+
+    </Window.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="20,4,20,24">
+
+            <!-- Fantrax Roster -->
+            <TextBlock Text="Fantrax Roster" Style="{StaticResource SectionHeader}" />
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+
+                    <Grid Margin="0,2,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="86" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="League URL"
+                                   Style="{StaticResource FieldLabel}" />
+                        <TextBox x:Name="RosterUrlBox" Grid.Column="1" FontSize="13"
+                                 KeyDown="OnRosterUrlKeyDown" LostFocus="OnRosterUrlLostFocus" />
+                    </Grid>
+
+                    <StackPanel x:Name="LoadingTeamsRow" Orientation="Horizontal"
+                                Margin="0,10,0,0" Visibility="Collapsed">
+                        <ProgressBar IsIndeterminate="True" Width="60" Height="3"
+                                     Margin="0,0,8,0" VerticalAlignment="Center" />
+                        <TextBlock Text="Loading teams..." FontSize="13"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource OnDeck.Text.Secondary}" />
+                    </StackPanel>
+
+                    <Grid x:Name="TeamPickerRow" Margin="0,10,0,0" Visibility="Collapsed">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="86" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Team" Style="{StaticResource FieldLabel}" />
+                        <ComboBox x:Name="TeamPicker" Grid.Column="1" FontSize="13"
+                                  DisplayMemberPath="Name" SelectedValuePath="Id"
+                                  SelectionChanged="OnTeamChanged" />
+                    </Grid>
+
+                    <Button x:Name="LoadTeamsButton" Content="Load Teams"
+                            HorizontalAlignment="Left" Margin="0,10,0,0" Padding="14,4"
+                            FontSize="13" Visibility="Collapsed" Click="OnLoadTeams" />
+
+                    <TextBlock x:Name="TeamsErrorText" Style="{StaticResource ErrorCaption}"
+                               Visibility="Collapsed" />
+
+                    <Grid Margin="0,12,0,0">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Left"
+                                    VerticalAlignment="Center">
+                            <ProgressBar x:Name="SyncSpinner" IsIndeterminate="True"
+                                         Width="60" Height="3" Margin="0,0,8,0"
+                                         VerticalAlignment="Center" Visibility="Collapsed" />
+                            <TextBlock x:Name="SyncStatusText" Style="{StaticResource Caption}"
+                                       Margin="0" VerticalAlignment="Center"
+                                       Visibility="Collapsed" />
+                        </StackPanel>
+                        <Button x:Name="SyncNowButton" Content="Sync Now" FontSize="13"
+                                HorizontalAlignment="Right" Padding="14,4" Click="OnSyncNow" />
+                    </Grid>
+
+                    <TextBlock x:Name="SyncErrorText" Style="{StaticResource ErrorCaption}"
+                               Visibility="Collapsed" />
+                    <TextBlock x:Name="PlayerCountText" Style="{StaticResource Caption}"
+                               Visibility="Collapsed" />
+
+                </StackPanel>
+            </Border>
+
+            <!-- Display -->
+            <TextBlock Text="Display" Style="{StaticResource SectionHeader}" />
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <CheckBox Content="Hide bench players" FontSize="13" Margin="0,4"
+                              IsChecked="{Binding HideBenchPlayers}" />
+                    <CheckBox Content="Always open popout on launch" FontSize="13" Margin="0,4"
+                              IsChecked="{Binding AlwaysOpenPopout}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Notifications -->
+            <TextBlock Text="Notifications" Style="{StaticResource SectionHeader}" />
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <CheckBox Content="Stepping up to bat" FontSize="13" Margin="0,4"
+                              IsChecked="{Binding NotifyBatting}" />
+                    <CheckBox Content="Taking the mound" FontSize="13" Margin="0,4"
+                              IsChecked="{Binding NotifyPitching}" />
+                    <CheckBox Content="At-bat results" FontSize="13" Margin="0,4"
+                              IsChecked="{Binding NotifyAtBatResult}" />
+                    <CheckBox Content="Pitching results" FontSize="13" Margin="0,4"
+                              IsChecked="{Binding NotifyPitchingResult}" />
+                    <CheckBox Content="Not in lineup" FontSize="13" Margin="0,4"
+                              IsChecked="{Binding NotifyNotInLineup}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Links -->
+            <TextBlock Text="Links" Style="{StaticResource SectionHeader}" />
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Margin="0,4">
+                        <Hyperlink NavigateUri="https://github.com/chefBrian/onDeck"
+                                   Foreground="{DynamicResource OnDeck.Accent.Blue}"
+                                   RequestNavigate="OnLink">GitHub</Hyperlink>
+                    </TextBlock>
+                    <TextBlock Margin="0,4">
+                        <Hyperlink NavigateUri="https://github.com/chefBrian/onDeck/issues"
+                                   Foreground="{DynamicResource OnDeck.Accent.Blue}"
+                                   RequestNavigate="OnLink">Report a Bug</Hyperlink>
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</Window>
