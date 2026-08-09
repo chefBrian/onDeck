@@ -24,11 +24,14 @@ public sealed record ThemePalette
     public const string Blue = "OnDeck.Accent.Blue";
     public const string BaseOccupied = "OnDeck.Base.Occupied";
     public const string BaseEmpty = "OnDeck.Base.Empty";
+    public const string Surface = "OnDeck.Surface";
+    public const string SurfaceCard = "OnDeck.Surface.Card";
 
     public static IReadOnlyList<string> Keys { get; } =
     [
         TextPrimary, TextSecondary, Divider, RowHover,
         Green, Orange, Red, Blue, BaseOccupied, BaseEmpty,
+        Surface, SurfaceCard,
     ];
 
     private ThemePalette(IReadOnlyDictionary<string, Color> colors) => Colors = colors;
@@ -64,6 +67,12 @@ public sealed record ThemePalette
         [Blue] = Color.FromArgb(0xFF, 0x0A, 0x84, 0xFF),
         [BaseOccupied] = Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF),
         [BaseEmpty] = Color.FromArgb(0x4D, 0x80, 0x80, 0x80),       // .gray.opacity(0.3)
+
+        // The settings window's grouped sections - SwiftUI's .formStyle(.grouped) recesses the
+        // window and raises the cards. Opaque: a window background with alpha shows whatever
+        // the compositor left behind it.
+        [Surface] = Color.FromArgb(0xFF, 0x20, 0x20, 0x20),
+        [SurfaceCard] = Color.FromArgb(0xFF, 0x2B, 0x2B, 0x2B),
     });
 
     private static ThemePalette Light() => new(new Dictionary<string, Color>
@@ -78,5 +87,7 @@ public sealed record ThemePalette
         [Blue] = Color.FromArgb(0xFF, 0x00, 0x40, 0xDD),
         [BaseOccupied] = Color.FromArgb(0xFF, 0x1C, 0x1C, 0x1E),
         [BaseEmpty] = Color.FromArgb(0x4D, 0x80, 0x80, 0x80),
+        [Surface] = Color.FromArgb(0xFF, 0xF2, 0xF2, 0xF7),
+        [SurfaceCard] = Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF),
     });
 }
