@@ -6,7 +6,19 @@ namespace OnDeck.Core.Utilities;
 /// </summary>
 public sealed class HeadshotCache(HttpClient http, string cacheDirectory)
 {
-    private static readonly byte[] PngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    /// <summary>
+    /// The formats <c>img.mlbstatic.com</c> serves. It answers the headshot URL with a **JPEG**
+    /// despite the <c>.png</c> in the path — that segment is the
+    /// <c>d_people:generic:headshot:67:current.png</c> *default image* parameter, not an output
+    /// format. Swift validates with <c>NSImage(data:) != nil</c>, which accepts any of these;
+    /// checking the PNG signature alone discarded every headshot the endpoint returned.
+    /// </summary>
+    private static readonly byte[][] ImageSignatures =
+    [
+        [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],   // PNG
+        [0xFF, 0xD8, 0xFF],                                 // JPEG
+        [0x47, 0x49, 0x46, 0x38],                           // GIF87a / GIF89a
+    ];
 
     public static string DefaultCacheDirectory() =>
         Path.Combine(
@@ -41,7 +53,7 @@ public sealed class HeadshotCache(HttpClient http, string cacheDirectory)
             if (!response.IsSuccessStatusCode) return;
 
             var bytes = await response.Content.ReadAsByteArrayAsync(ct);
-            if (!IsPng(bytes)) return;
+            if (!IsImage(bytes)) return;
 
             Directory.CreateDirectory(cacheDirectory);
             await File.WriteAllBytesAsync(PathFor(playerId), bytes, ct);
@@ -52,9 +64,20 @@ public sealed class HeadshotCache(HttpClient http, string cacheDirectory)
         }
     }
 
-    private static bool IsPng(byte[] bytes) =>
-        bytes.Length > PngSignature.Length
-        && bytes.AsSpan(0, PngSignature.Length).SequenceEqual(PngSignature);
+    /// <summary>
+    /// The dependency-free stand-in for Swift's <c>NSImage(data:)</c> decode. It still has a job:
+    /// MLB answers an unknown player with an HTML error page, and caching that would leave a
+    /// permanently broken image on disk.
+    /// </summary>
+    private static bool IsImage(byte[] bytes) =>
+        ImageSignatures.Any(signature =>
+            bytes.Length > signature.Length
+            && bytes.AsSpan(0, signature.Length).SequenceEqual(signature));
 
+    /// <summary>
+    /// Always <c>.png</c>, whatever the bytes turn out to be — Swift writes the same filename
+    /// (<c>HeadshotCache.swift:37</c>), and every consumer (WPF's image loader, the toast
+    /// renderer) decodes by content rather than extension.
+    /// </summary>
     private string PathFor(int playerId) => Path.Combine(cacheDirectory, $"{playerId}.png");
 }
