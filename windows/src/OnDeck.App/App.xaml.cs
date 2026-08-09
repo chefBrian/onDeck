@@ -25,6 +25,7 @@ public partial class App : Application
     private TeamLogoStore? _logos;
     private SettingsStore? _settingsStore;
     private AppOrchestrator? _orchestrator;
+    private SystemEventsWatcher? _systemEvents;
     private bool _exitAfterActivation;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -115,6 +116,14 @@ public partial class App : Application
         if (settings.AlwaysOpenPopout) _panel.Toggle();
 
         _ = _orchestrator.StartAsync();
+
+        // Background thread in, Dispatcher out: HandleSystemResumeAsync is Core, and Core runs on
+        // the Dispatcher. It debounces 30 s and invalidates the monitor's timecodes internally,
+        // so the shell just has to ask.
+        // The parameter cannot be named `_` - that would make the inner `_ =` discard an
+        // assignment to this lambda's own string parameter instead (CS0029).
+        _systemEvents = new SystemEventsWatcher(reason =>
+            Dispatcher.InvokeAsync(() => _ = _orchestrator.HandleSystemResumeAsync()));
     }
 
     /// <summary>
@@ -251,6 +260,7 @@ public partial class App : Application
     {
         _panel?.Close();
         _settingsWindow?.Close();
+        _systemEvents?.Dispose();
         _tray?.Dispose();
         _theme?.Dispose();
         _singleInstance?.Dispose();
