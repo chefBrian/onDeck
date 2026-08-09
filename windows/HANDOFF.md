@@ -68,14 +68,15 @@ dotnet publish windows/src/OnDeck.App -c Release -r win-x64 --self-contained \
 Note: a bare `dotnet test` from the repo root fails — there's no project there. Always pass the
 solution or project path.
 
-**Kill the app before building or testing.** A running `OnDeck.App.exe` holds a lock on
+**Kill the app before building or testing.** A running `onDeck.exe` (the process is named
+`onDeck`, not `OnDeck.App` — Phase 9 renamed the assembly) holds a lock on
 `OnDeck.Core.dll`, so `OnDeck.App.Tests` fails to build — and `dotnet test` still exits after
 reporting **`Passed!` for `OnDeck.Core.Tests` alone**, which reads exactly like a green run. The
 `MSB3027`/`MSB3021` copy errors are buried above it. Always check that **two** `Passed!` lines came
 back, one per test project:
 
 ```bash
-powershell -NoProfile -Command "Get-Process -Name 'OnDeck.App' -ErrorAction SilentlyContinue | Stop-Process -Force"
+powershell -NoProfile -Command "Get-Process -Name 'onDeck' -ErrorAction SilentlyContinue | Stop-Process -Force"
 dotnet test windows/OnDeck.slnx 2>&1 | grep -E "Passed!|Failed!|error MSB"
 ```
 
@@ -87,8 +88,8 @@ dotnet test windows/OnDeck.slnx 2>&1 | grep -E "Passed!|Failed!|error MSB"
   (it sits among the `xcodebuild` / `/Applications` commands). Running `dotnet build`/`test` for the
   port is expected — TDD can't verify anything otherwise.
 - **Launching the built Windows app locally to verify is allowed; installing it is not.** Run it
-  from `bin/Debug/net10.0-windows/`. Phase 7b did this routinely and it is how both live bugs were
-  found. Kill it again before the next build (§3).
+  from `bin/Debug/net10.0-windows10.0.17763.0/onDeck.exe`. Phase 7b did this routinely and it is
+  how both live bugs were found. Kill it again before the next build (§3).
 - **Don't trust automated screen capture for visual checks.** It produced confidently wrong
   conclusions in Phase 7a. Ask the owner to look — that is how the acrylic Refresh clue surfaced.
   A useful trick: launching the exe a second time makes the running instance open the flyout
@@ -109,7 +110,7 @@ windows/
 │   │                         NameCleaner, FantraxUrlParser, StreamLinkRouter, HeadshotCache,
 │   │                         BaseballCalendar
 │   └── Managers/             RosterManager, ScheduleManager, StateManager, GameMonitor
-├── src/OnDeck.App/           net10.0-windows WPF
+├── src/OnDeck.App/           net10.0-windows10.0.17763.0 WPF, ships as onDeck.exe
 │   ├── App.xaml(.cs)         composition root; palette application; Float wiring
 │   ├── SettingsStore.cs      ISettingsStore + the shell-only FloatingPanelFrame
 │   ├── Platform/             DwmBackdrop, MonitorWorkArea, ShellLog, SingleInstance,
@@ -126,7 +127,7 @@ windows/
 │   ├── RecordingNotificationSink.cs  INotificationSink double with an ordered call log
 │   ├── Networking/RoutingHttpMessageHandler.cs   URL-routed HTTP double
 │   └── App/OrchestratorHarness.cs    composes managers + routes + orchestrator
-└── tests/OnDeck.App.Tests/   net10.0-windows, same stack
+└── tests/OnDeck.App.Tests/   net10.0-windows10.0.17763.0, same stack
     ├── StubHttpMessageHandler.cs     its own copy — the two test projects don't reference
     │                                 each other
     └── RecordingSettingsStore.cs     ISettingsStore double that logs which keys were written,
@@ -521,7 +522,7 @@ dark and green variants and none of them is a general-purpose window icon.
 ```bash
 # Kill the app first - a running instance locks OnDeck.Core.dll and OnDeck.App.Tests
 # then silently fails to build while the run still prints Passed! for Core alone (§3).
-powershell -NoProfile -Command "Get-Process -Name 'OnDeck.App' -ErrorAction SilentlyContinue | Stop-Process -Force"
+powershell -NoProfile -Command "Get-Process -Name 'onDeck' -ErrorAction SilentlyContinue | Stop-Process -Force"
 
 dotnet test windows/OnDeck.slnx          # expect: TWO "Passed!" lines, Failed: 0 on both
 dotnet publish windows/src/OnDeck.App -c Release -r win-x64 --self-contained \
