@@ -26,6 +26,11 @@ public partial class FlyoutWindow : Window
 
         Sections.RowActivated += OpenStream;
         Footer.Resync = _orchestrator.ResyncRosterAsync;
+        Footer.SettingsRequested += () =>
+        {
+            Hide();     // Swift dismisses the menu bar window before opening Settings
+            SettingsRequested?.Invoke();
+        };
         Footer.FantraxRequested += OpenFantrax;
         Footer.QuitRequested += () => Application.Current.Shutdown();
         Footer.FloatRequested += () => FloatRequested?.Invoke();
@@ -41,6 +46,9 @@ public partial class FlyoutWindow : Window
 
     /// <summary>The footer's Float button; the app owns the panel itself.</summary>
     public event Action? FloatRequested;
+
+    /// <summary>The footer's Settings button; the app owns the window itself.</summary>
+    public event Action? SettingsRequested;
 
     /// <summary>Keeps the Float glyph in step with whether the panel is open.</summary>
     public void SetFloating(bool isPanelOpen) => Footer.SetFloating(isPanelOpen);

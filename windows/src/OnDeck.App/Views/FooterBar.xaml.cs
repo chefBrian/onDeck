@@ -5,8 +5,8 @@ using System.Windows.Media.Animation;
 namespace OnDeck.App.Views;
 
 /// <summary>
-/// Port of <c>FooterButtons</c> in <c>Views/MenuBarView.swift</c>. Settings is absent by design
-/// until Phase 8 brings the window it would open.
+/// Port of <c>FooterButtons</c> in <c>Views/MenuBarView.swift</c>: Settings, Fantrax, Refresh and
+/// Float on the left, Quit on the right.
 /// </summary>
 public partial class FooterBar : UserControl
 {
@@ -50,6 +50,8 @@ public partial class FooterBar : UserControl
     /// <summary>What Refresh runs. Set by the window that owns this bar.</summary>
     public Func<Task<bool>>? Resync { get; set; }
 
+    public event Action? SettingsRequested;
+
     public event Action? FantraxRequested;
 
     public event Action? FloatRequested;
@@ -59,6 +61,8 @@ public partial class FooterBar : UserControl
     /// <summary>Swaps the Float glyph between "open a panel" and "put it back".</summary>
     public void SetFloating(bool isPanelOpen) =>
         FloatGlyph.Text = isPanelOpen ? FloatCloseGlyphText : FloatOpenGlyphText;
+
+    private void OnSettings(object sender, RoutedEventArgs e) => SettingsRequested?.Invoke();
 
     private void OnFantrax(object sender, RoutedEventArgs e) => FantraxRequested?.Invoke();
 

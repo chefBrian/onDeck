@@ -35,6 +35,15 @@
     <Grid Margin="12,2,12,6">
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
 
+            <Button x:Name="SettingsButton" Style="{StaticResource FooterButton}" Click="OnSettings">
+                <StackPanel>
+                    <TextBlock Text="&#xE713;" FontFamily="{StaticResource FooterIconFont}"
+                               FontSize="16" Height="20" HorizontalAlignment="Center" />
+                    <TextBlock Text="Settings" FontSize="10" Margin="0,3,0,0"
+                               HorizontalAlignment="Center" />
+                </StackPanel>
+            </Button>
+
             <Button x:Name="FantraxButton" Style="{StaticResource FooterButton}" Click="OnFantrax">
                 <StackPanel>
                     <TextBlock Text="&#xE774;" FontFamily="{StaticResource FooterIconFont}"
