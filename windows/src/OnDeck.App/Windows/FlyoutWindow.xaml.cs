@@ -52,7 +52,7 @@ public partial class FlyoutWindow : Window
         Show();
         UpdateLayout();
 
-        var workArea = SystemParameters.WorkArea;
+        var workArea = WorkAreaFor(anchorDevicePixels);
         var anchor = ToAnchorRect(anchorDevicePixels, workArea);
 
         var placement = FlyoutPositioner.Place(anchor, workArea, new Size(Width, ActualHeight));
@@ -64,9 +64,24 @@ public partial class FlyoutWindow : Window
     }
 
     /// <summary>
-    /// Device pixels to DIPs. WPF's <c>Left</c>/<c>Top</c> and <c>SystemParameters.WorkArea</c>
-    /// are DIPs while <c>GetCursorPos</c> is raw pixels, so skipping this puts the flyout in the
-    /// wrong place on any display not at 100% scaling.
+    /// The work area of the monitor the tray is on, in DIPs. Falls back to the primary monitor's
+    /// when there is no anchor or the shell declines to answer.
+    /// </summary>
+    private Rect WorkAreaFor(Point? anchorDevicePixels)
+    {
+        if (anchorDevicePixels is { } anchor
+            && MonitorWorkArea.ForDevicePoint(anchor) is { } devicePixels)
+        {
+            return MonitorWorkArea.ToDips(devicePixels, this);
+        }
+
+        return SystemParameters.WorkArea;
+    }
+
+    /// <summary>
+    /// Device pixels to DIPs. WPF's <c>Left</c>/<c>Top</c> and the work area are DIPs while
+    /// <c>GetCursorPos</c> is raw pixels, so skipping this puts the flyout in the wrong place on
+    /// any display not at 100% scaling.
     /// </summary>
     private Rect ToAnchorRect(Point? devicePixels, Rect workArea)
     {
