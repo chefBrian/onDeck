@@ -4,49 +4,29 @@ using System.Windows;
 namespace OnDeck.App.Platform;
 
 /// <summary>
-/// Asks the shell where our tray icon actually is. Guessing the bottom-right corner breaks on
-/// docked taskbars, overflow flyouts and multi-monitor setups.
+/// Where to anchor the flyout.
+/// <para>
+/// The exact icon rectangle would come from <c>Shell_NotifyIconGetRect</c>, but that needs the
+/// window handle and icon id Hardcodet keeps private (<c>messageSink</c>, <c>iconData</c>), and
+/// reflecting into a library's internals is a worse bug than a few pixels. The cursor is over
+/// the icon whenever the user clicks it, so it anchors just as well — and it follows the tray
+/// across docked taskbars and monitors with no extra work.
+/// </para>
 /// </summary>
 public static class TrayGeometry
 {
     [StructLayout(LayoutKind.Sequential)]
-    private struct NotifyIconIdentifier
+    private struct NativePoint
     {
-        public uint Size;
-        public IntPtr Window;
-        public uint Id;
-        public Guid Item;
+        public int X;
+        public int Y;
     }
 
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativeRect
-    {
-        public int Left;
-        public int Top;
-        public int Right;
-        public int Bottom;
-    }
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetCursorPos(out NativePoint point);
 
-    [DllImport("shell32.dll", SetLastError = true)]
-    private static extern int Shell_NotifyIconGetRect(
-        ref NotifyIconIdentifier identifier, out NativeRect rectangle);
-
-    /// <summary>Screen-pixel rectangle of the icon, or null when the shell won't say.</summary>
-    public static Rect? IconRectangle(IntPtr windowHandle, uint iconId)
-    {
-        var identifier = new NotifyIconIdentifier
-        {
-            Size = (uint)Marshal.SizeOf<NotifyIconIdentifier>(),
-            Window = windowHandle,
-            Id = iconId,
-        };
-
-        if (Shell_NotifyIconGetRect(ref identifier, out var rectangle) != 0) return null;
-
-        return new Rect(
-            rectangle.Left,
-            rectangle.Top,
-            rectangle.Right - rectangle.Left,
-            rectangle.Bottom - rectangle.Top);
-    }
+    /// <summary>Cursor position in <em>device pixels</em>. Callers must convert to DIPs.</summary>
+    public static Point? CursorPosition() =>
+        GetCursorPos(out var point) ? new Point(point.X, point.Y) : null;
 }
