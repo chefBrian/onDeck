@@ -1,9 +1,11 @@
 # onDeck Windows Port — Handoff
 
-**As of:** 2026-08-08, end of Phase 5. Branch: `main`. 43 commits since `33e8031`.
+**As of:** 2026-08-08, end of Phase 6. Branch: `main`.
 
-**State:** `OnDeck.Core` is **complete**. 500 tests green, working tree clean, single-file publish
-verified. No shell work has started — Phase 6 is the first Windows-PC phase.
+**State:** `OnDeck.Core` is **complete** and the shell **runs** — tray icon, light-dismissing
+flyout, context menu, settings on disk, all driven by the real engine. 522 tests green (500 Core +
+22 App), working tree clean, single-file publish verified. The toast spike passed, so Phase 9's
+stack is settled. Phase 7 is the flyout's real content.
 
 ---
 
@@ -163,31 +165,44 @@ Each phase plan has its own list; the ones with ongoing consequences:
 | **Phase 5:** notification work runs through `RunGuarded` (catch + `Debug.WriteLine`) | The sink is shell-implemented and the toast API can throw; a failed notification must not tear down the transition pipeline |
 | **Phase 5:** `requestPermission()`, `MemoryPressureRelief`, `FloatingPanel` auto-open not ported into Core | Shell concerns (Phases 7/9) or macOS-only |
 
+| **Phase 6:** WPF-UI dropped for .NET 10's native Fluent theme + `DwmSetWindowAttribute` | The framework now covers what WPF-UI was chosen for; one less dependency and a smaller exe. User-confirmed |
+| **Phase 6:** `App/System/` is `App/Platform/` | A namespace named `System` nested under `OnDeck.App` shadows the global `System` inside WPF's generated `App.g.cs`. The layout in `PORT_PLAN.md` does not compile as written |
+| **Phase 6:** flyout anchors on the cursor, not `Shell_NotifyIconGetRect` | That call needs the hwnd and icon id Hardcodet keeps private. The cursor is over the icon whenever it's clicked; device pixels are converted to DIPs explicitly so scaling stays right |
+| **Phase 6:** `SettingsStore` landed here, not Phase 8 | The composition root cannot build `AppOrchestrator` without an `ISettingsStore`. Phase 8 is now purely the settings UI |
+| **Phase 6:** tray icons drop Tabler's stitch strokes at all sizes | Cluttered even at 128 px, mud at 16. Circle + seams reads as a baseball everywhere we render it |
+
 `OnDeck.Core` has `<InternalsVisibleTo Include="OnDeck.Core.Tests" />` for the `internal` seams on
 `GameMonitor` (`TrackGames`, `NextEventDelay`, `SelectGamesToPoll`, `PollSingleGameAsync`,
 `ProcessFeed`), `DisplayRules` (the whole class), and `AppOrchestrator.TimeUntilNextEightAm`.
 
-## 9. Next up — Phase 6: Shell skeleton + platform spikes
+## 9. Next up — Phase 7: Flyout UI + floating panel
 
-*(Windows PC from here on. Phases 6–11 need a human at the keyboard for the manual Win11 checks:
-light/dark taskbar, 100/150% scaling, multi-monitor, toast click-through with the app dead, Focus
-Assist.)*
+*(Windows PC. Phases 7–11 need a human at the keyboard for the manual Win11 checks.)*
 
-**The entry spike is done and PASSED** (2026-08-08) — `windows/spikes/ToastActivationSpike/`, result
-in its `FINDINGS.md`. `Microsoft.Toolkit.Uwp.Notifications` 7.1.3 activates an unpackaged single-file
-exe both hot and cold with arguments intact, so the Windows App SDK fallback is off the table. Three
-findings bind later work: no Start Menu shortcut or AUMID entry is created (activation routes through
-the registered CLSID alone); `OnDeck.App` must move to `net10.0-windows10.0.17763.0` in Phase 9; and
-the single-instance guard must not kill a `-ToastActivated -Embedding` launch before its activation
-is handled.
+**Spec:** `onDeck/Views/MenuBarView.swift`. The sorting and filter rules are already ported and
+tested in Core (`DisplayRules`, `AppOrchestrator`) — Phase 7 is presentation only. Every row field
+the Swift view reads is already resolved onto `PlayerDisplay`; do not recompute any of it in XAML.
 
-Remaining, per `PORT_PLAN.md` Phase 6: single-instance guard (named mutex — needed early because toast
-activation can re-launch the exe), tray icon with white/dark/green .ico + `ThemeWatcher`, and
-`FlyoutWindow` positioned off `Shell_NotifyIconGetRect` with an acrylic backdrop **and a solid-colour
-fallback**.
+Build: `PlayerRow` control (headshot, name, state dot, `StatLine`), UPCOMING / IN GAME / DONE
+sections, PPD label, rain/delay icon from `PlayerDisplay.Delay` + tooltip, stream-link click →
+`Process.Start`, not-in-lineup flag (hitters only), footer buttons (Settings, Fantrax, Refresh with
+idle/spinning/done/failed off `ResyncRosterAsync`'s bool, Float, Quit). Then `FloatingPanelWindow`:
+always-on-top no-activate borderless window reusing the same section views, drag-by-background,
+frame saved to settings, toggled by Float, auto-opened at launch when `AlwaysOpenPopout`.
 
-Also unstarted: icon assets. Tabler Icons `ball-baseball` (MIT), recoloured white/dark/green and
-rendered to a multi-res `.ico` (16/20/24/32).
+**Replace the placeholder** in `FlyoutWindow.xaml` (a one-line counts summary) with the real
+sections, and add Float + Settings to the tray context menu once their windows exist.
+
+### Phase 6 debts to clear in Phase 7
+
+1. **Multi-monitor placement is wrong.** `FlyoutWindow.ShowAt` uses `SystemParameters.WorkArea`,
+   which is always the *primary* monitor's. Use the work area of the monitor containing the anchor.
+2. **`ThemeWatcher`'s change path has never run.** Verify the tray icon swaps white↔dark when the
+   Windows colour mode changes with the app running.
+3. **Unknown whether acrylic or the solid fallback fired.** If the flyout is a flat `#202020`
+   rectangle, `DwmSetWindowAttribute` refused it on this build — record the build number.
+4. The rest of the Task 7 matrix in `plans/2026-08-08-phase-6-shell-skeleton.md`: display scaling,
+   docked taskbar edges, double-launch, Quit leaving no process.
 
 ### What the shell must honour when it wires up Core
 
@@ -212,10 +227,14 @@ rendered to a multi-res `.ico` (16/20/24/32).
 - `OrchestratorHarness` — declares players/games once and derives the Fantrax, MLB-search, schedule
   and cached-roster payloads from them; `Run`/`RunStarted` wrap the context and clean up.
 
-## 10. After Phase 6 — Phases 7–11
+## 10. After Phase 7 — Phases 8–11
 
-Flyout UI + floating panel (7), Settings (8), Notifications (9), system integration & ship (10),
-parity QA (11). See `PORT_PLAN.md` for each phase's scope and the parity checklist.
+Settings window (8), Notifications (9), system integration & ship (10), parity QA (11). See
+`PORT_PLAN.md` for each phase's scope and the parity checklist.
+
+**Phase 9 starts by bumping `OnDeck.App` to `net10.0-windows10.0.17763.0`** — the toast compat APIs
+are not exposed on the bare `net10.0-windows` the app targets today. The spike project already does
+this; copy its csproj settings.
 
 ## 11. Verification before claiming a phase done
 

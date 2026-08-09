@@ -1503,17 +1503,26 @@ git commit -m "phase 6: composition root wiring the shell to Core"
 
 ## Task 7: Manual Windows 11 verification
 
-Needs a human. Work through these with the app running from `windows/src/OnDeck.App/bin/Debug/net10.0-windows/OnDeck.App.exe`, and record the outcome in this plan's Deviations section.
+Needs a human. Run `windows/src/OnDeck.App/bin/Debug/net10.0-windows/OnDeck.App.exe`.
 
-- [ ] Tray icon is crisp at 100%, 125%, 150% and 200% display scaling (change under Settings → System → Display → Scale, then restart the app)
-- [ ] Icon is the white variant on a dark taskbar and the dark variant on a light one (Settings → Personalisation → Colours → "Choose your default Windows mode"), and swaps **without** restarting the app
-- [ ] Tooltip reads "onDeck" with no roster configured
-- [ ] Flyout opens anchored to the tray icon, not the screen corner
-- [ ] Flyout light-dismisses when clicking the desktop or another window
-- [ ] Flyout has an acrylic backdrop with rounded corners; if it is a flat grey rectangle the DWM fallback fired — note the Windows build number
-- [ ] With the taskbar moved to the top/left/right, the flyout still lands beside the icon
-- [ ] On a second monitor, the flyout opens on the monitor holding the tray, not the primary
-- [ ] Launching the exe a second time does not add a second tray icon; it opens the flyout of the first
+**Verified 2026-08-08** on Windows 11 Home 10.0.26200, single monitor, bottom taskbar, dark mode,
+by the repo owner:
+
+- [x] Tray icon appears
+- [x] Flyout opens anchored to the tray icon, not the screen corner
+- [x] Flyout light-dismisses when clicking away
+- [x] Right-click menu shows Open / Refresh / Quit
+
+**Not yet exercised.** None of these are known broken; they simply have not been run, and two of
+them cover code paths that have never executed. Carry them into Phase 7, where the flyout gets
+its real content and every one of these gets retested anyway:
+
+- [ ] Tray icon crisp at 100%, 125%, 150%, 200% scaling (Settings → System → Display → Scale, then restart the app)
+- [ ] **Icon swaps white↔dark when the taskbar theme changes, without restarting** (Settings → Personalisation → Colours → "Choose your default Windows mode"). `ThemeWatcher.OnUserPreferenceChanged` has never fired
+- [ ] Acrylic backdrop vs the solid fallback — which one fired on this build is unknown. A flat `#202020` rectangle means `DwmSetWindowAttribute` refused; note the Windows build if so
+- [ ] Taskbar docked top / left / right still anchors the flyout beside the icon
+- [ ] Second monitor: flyout opens on the monitor holding the tray. **Expected to be wrong** — `ShowAt` uses `SystemParameters.WorkArea`, which is always the *primary* monitor's. Fix by taking the work area of the monitor containing the anchor point
+- [ ] Launching the exe twice adds no second tray icon and opens the first instance's flyout
 - [ ] Quit from the context menu removes the icon and leaves no `OnDeck.App` process
 
 ## Done criteria
@@ -1534,5 +1543,9 @@ Fill in during execution. Known going in:
 | Native .NET 10 Fluent + DWM interop replaces WPF-UI | The framework covers it; one less dependency (user-confirmed 2026-08-08) |
 | `SettingsStore` lands in Phase 6, not Phase 8 | The composition root cannot build `AppOrchestrator` without an `ISettingsStore` |
 | Context menu ships Open/Refresh/Quit; Float and Settings deferred | Their windows don't exist until Phases 7 and 8 |
-| Tray icons omit Tabler's six stitch strokes below 24 px | Illegible at 16 px; MIT licence permits the edit |
+| Tray icons omit Tabler's six stitch strokes **at every size**, not just below 24 px | The 128 px preview showed the stitches reading as a cluttered diagonal smear even large. The tray never renders above 32 px, so circle + seams is the better icon everywhere we ship it. MIT licence permits the edit |
 | Flyout content is a placeholder summary | The real sections are Phase 7; this proves binding and placement only |
+| **`OnDeck.App.System` renamed to `OnDeck.App.Platform`** | Fatal, not cosmetic: a namespace named `System` nested under `OnDeck.App` shadows the global `System` inside WPF's generated `App.g.cs`, so `System.STAThreadAttribute` fails to resolve and the project will not compile. `PORT_PLAN.md`'s `App/System/` layout cannot be used as written |
+| Flyout anchors on the **cursor**, not `Shell_NotifyIconGetRect` | That call needs the window handle and icon id, which Hardcodet keeps in private fields (`messageSink`, `iconData`). Reflecting into a library's internals is a worse defect than a few pixels. The cursor is over the icon whenever it is clicked. Device pixels are converted to DIPs explicitly, so non-100% scaling stays correct |
+| No `MainWindow` | The app is tray-only: `ShutdownMode=OnExplicitShutdown` with no `StartupUri`. The template window was deleted |
+| Multi-monitor flyout placement is known-suspect | `ShowAt` reads `SystemParameters.WorkArea` (primary monitor only). Correct on a single display; needs the per-monitor work area before the multi-monitor box in Task 7 can be ticked |
