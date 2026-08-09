@@ -80,6 +80,15 @@ public partial class App : Application
         var settings = new SettingsStore();
         _settingsStore = settings;
         _startup = new StartupManager();
+
+        // The Run value is an absolute path, so it goes stale the moment the exe moves - Debug to
+        // Release, or to wherever it ends up installed. Same dangling-registration problem the
+        // toast COM entry has, same answer: rewrite it while we know where we are.
+        if (_startup.IsEnabled && !_startup.IsCurrent)
+        {
+            ShellLog.Append("[Startup] run value points elsewhere - re-registering this exe");
+            _startup.SetEnabled(true);
+        }
         var http = new HttpClient(new SocketsHttpHandler { MaxConnectionsPerServer = 4 });
         var mlb = new MlbStatsApi(http);
         var fantrax = new FantraxApi(http);

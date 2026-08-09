@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="onDeck Settings"
+        Icon="pack://application:,,,/Assets/app.ico"
         Width="480" Height="760" MinWidth="450" MinHeight="720"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource OnDeck.Surface}"

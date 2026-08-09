@@ -37,6 +37,12 @@ string[] stitches =
 
 int[] sizes = [16, 20, 24, 32];
 
+// The app icon is a different problem from the tray icon: it renders as large as 256 px in
+// Explorer and the SmartScreen dialog, and it has to read against whatever the user's wallpaper
+// or title bar happens to be. A filled disc gives the same art something to sit on.
+Color discColour = Color.FromRgb(0x34, 0xC7, 0x59);
+int[] appSizes = [16, 32, 48, 64, 128, 256];
+
 var outputDirectory = args.Length > 0 ? args[0] : ".";
 var previewDirectory = args.Length > 1 ? args[1] : null;
 Directory.CreateDirectory(outputDirectory);
@@ -55,6 +61,18 @@ foreach (var (name, colour) in variants)
     File.WriteAllBytes(
         Path.Combine(previewDirectory, name + ".outline.png"), RenderPng(128, colour, withStitches: false));
     File.WriteAllBytes(Path.Combine(previewDirectory, name + ".16.png"), frames[0]);
+}
+
+{
+    var frames = appSizes.Select(RenderAppPng).ToArray();
+    var path = Path.Combine(outputDirectory, "app.ico");
+    File.WriteAllBytes(path, PackIco(appSizes, frames));
+    Console.WriteLine($"{path}  {new FileInfo(path).Length} bytes  ({string.Join(", ", appSizes)})");
+
+    if (previewDirectory is not null)
+    {
+        File.WriteAllBytes(Path.Combine(previewDirectory, "app.preview.png"), RenderAppPng(256));
+    }
 }
 
 return 0;
@@ -77,6 +95,50 @@ byte[] RenderPng(int size, Color colour, bool? withStitches = null)
         // The 24-unit design box scales to the target; strokes scale with it.
         context.PushTransform(new ScaleTransform(size / 24.0, size / 24.0));
         foreach (var data in paths) context.DrawGeometry(null, pen, Geometry.Parse(data));
+        context.Pop();
+    }
+
+    var bitmap = new RenderTargetBitmap(size, size, 96, 96, PixelFormats.Pbgra32);
+    bitmap.Render(visual);
+
+    var encoder = new PngBitmapEncoder();
+    encoder.Frames.Add(BitmapFrame.Create(bitmap));
+
+    using var stream = new MemoryStream();
+    encoder.Save(stream);
+    return stream.ToArray();
+}
+
+byte[] RenderAppPng(int size)
+{
+    var disc = new SolidColorBrush(discColour);
+    disc.Freeze();
+
+    // White on the disc, and a touch heavier than the tray stroke so it survives the shrink to
+    // 62% below without dissolving at 16 px.
+    var pen = new Pen(new SolidColorBrush(Colors.White), 2.4)
+    {
+        StartLineCap = PenLineCap.Round,
+        EndLineCap = PenLineCap.Round,
+        LineJoin = PenLineJoin.Round,
+    };
+    pen.Freeze();
+
+    var visual = new DrawingVisual();
+    using (var context = visual.RenderOpen())
+    {
+        context.PushTransform(new ScaleTransform(size / 24.0, size / 24.0));
+        context.DrawEllipse(disc, null, new System.Windows.Point(12, 12), 12, 12);
+
+        // Shrink the 24-unit ball about the centre so it sits inside the disc with a margin.
+        context.PushTransform(new TranslateTransform(12, 12));
+        context.PushTransform(new ScaleTransform(0.62, 0.62));
+        context.PushTransform(new TranslateTransform(-12, -12));
+        foreach (var data in outline) context.DrawGeometry(null, pen, Geometry.Parse(data));
+        context.Pop();
+        context.Pop();
+        context.Pop();
+
         context.Pop();
     }
 
