@@ -48,8 +48,8 @@ public partial class App : Application
         switch (action)
         {
             case LaunchAction.SendTestToastsAndExit:
-                SendTestToasts();
-                Shutdown();
+                // Shuts itself down when the sends finish - it has real awaits in it.
+                SendTestToastsThenExit();
                 return;
 
             case LaunchAction.HandleToastActivationAndExit:
@@ -190,29 +190,48 @@ public partial class App : Application
     /// Action Center behaviour can be checked without waiting for a live at-bat. Toggles are
     /// respected — whether a checkbox actually silences its type is one of the things to check.
     /// </summary>
-    private static void SendTestToasts()
+    private void SendTestToastsThenExit()
+    {
+        // Off the Dispatcher deliberately. Core awaits without ConfigureAwait(false) — the
+        // single-logical-thread rule — so blocking this thread on the prefetch would post the
+        // continuation to the very thread doing the waiting and hang the process. Inside
+        // Task.Run there is no SynchronizationContext, so the continuations land on the pool.
+        _ = Task.Run(SendTestToastsAsync)
+            .ContinueWith(_ => Dispatcher.InvokeAsync(Shutdown));
+    }
+
+    private static async Task SendTestToastsAsync()
     {
         var settings = new SettingsStore();
-        var http = new HttpClient();
+
+        // Bounded: this process has no UI, so a hung request would leave it invisible and alive.
+        var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
         var headshots = new HeadshotCache(http, HeadshotCache.DefaultCacheDirectory());
         var service = new ToastService(settings, headshots, new WindowsToastPresenter());
 
-        // Mookie Betts - a headshot is likely already cached from a roster sync.
-        const int playerId = 605141;
+        const int playerId = 605141;     // Mookie Betts
+        const int pitcherId = 657277;    // Logan Webb
+        const int benchedId = 518692;    // Freddie Freeman
         const int gamePk = 776543;
         var stream = new Uri("https://www.mlb.com/tv/g776543");
 
-        service.NotifyBattingAsync(
-            "Mookie Betts", playerId, gamePk, "SF 1 - LAD 2", "Bot 3", stream).Wait();
-        service.NotifyPitchingAsync(
-            "Logan Webb", 657277, gamePk, "SF 1 - LAD 2", "Top 4", stream).Wait();
-        service.NotifyAtBatResultAsync(
-            "Mookie Betts", playerId, "Home run to left field", stream).Wait();
-        service.NotifyPitchingResultAsync(
-            "Logan Webb", 657277, "Logan Webb has been pulled from the game", stream).Wait();
-        service.NotifyNotInLineupAsync(
-            "Freddie Freeman", 518692, gamePk, "SF @ LAD",
-            new Uri("https://www.fantrax.com/fantasy/league/lg1/home")).Wait();
+        // These three are almost certainly not on the user's roster, so nothing has cached their
+        // headshots. Without this the test toasts come up imageless and read as "headshots are
+        // broken" - the opposite of what this switch is for. It also exercises the download path,
+        // which is where the JPEG-vs-PNG bug lived.
+        await headshots.PrefetchAsync([playerId, pitcherId, benchedId]);
+
+        await service.NotifyBattingAsync(
+            "Mookie Betts", playerId, gamePk, "SF 1 - LAD 2", "Bot 3", stream);
+        await service.NotifyPitchingAsync(
+            "Logan Webb", pitcherId, gamePk, "SF 1 - LAD 2", "Top 4", stream);
+        await service.NotifyAtBatResultAsync(
+            "Mookie Betts", playerId, "Home run to left field", stream);
+        await service.NotifyPitchingResultAsync(
+            "Logan Webb", pitcherId, "Logan Webb has been pulled from the game", stream);
+        await service.NotifyNotInLineupAsync(
+            "Freddie Freeman", benchedId, gamePk, "SF @ LAD",
+            new Uri("https://www.fantrax.com/fantasy/league/lg1/home"));
 
         ShellLog.Append("[Toast] sent the --test-toast set");
     }
