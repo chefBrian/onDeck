@@ -184,6 +184,14 @@ public sealed class FantraxApi(HttpClient http, TimeProvider timeProvider)
 
     // MARK: - Network
 
+    /// <summary>
+    /// Fantrax's edge rejects any request that carries no <c>User-Agent</c> at all with a 403 —
+    /// the value is not inspected, only its presence, so this identifies the app honestly rather
+    /// than impersonating a browser. Swift never had to set it: <c>URLSession</c> always sends a
+    /// default one, while .NET's <c>HttpClient</c> sends none.
+    /// </summary>
+    private const string UserAgent = "onDeck/1.0";
+
     private async Task<JsonDocument> PostRequestAsync(
         string leagueId, string method, IReadOnlyDictionary<string, string> data, CancellationToken ct)
     {
@@ -199,6 +207,8 @@ public sealed class FantraxApi(HttpClient http, TimeProvider timeProvider)
         {
             Content = new StringContent(body, Encoding.UTF8, "text/plain"),
         };
+
+        request.Headers.UserAgent.ParseAdd(UserAgent);
 
         using var response = await http.SendAsync(request, ct);
         if (!response.IsSuccessStatusCode) throw FantraxException.HttpError((int)response.StatusCode);

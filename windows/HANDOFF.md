@@ -135,13 +135,17 @@ the last once drained). `FakeTimeProvider` for anything clock-driven. Tests asse
 POST bodies**, not just response parsing — the `hydrate` terms, timecode formats and the Fantrax
 `period` param are what break silently.
 
-### Three traps that already bit
+### Four traps that already bit
 
 1. **`Uri.ToString()` unescapes for display.** Assert percent-encoding against `AbsoluteUri`.
 2. **Raw string literals:** JSON fixtures with `}}` runs collide with `$$"""…{{x}}…"""`
    interpolation. Use `$$$"""…{{{x}}}…"""` when the JSON has doubled closing braces.
 3. **`JsonElement` lifetime.** Elements are only valid while their `JsonDocument` is alive. If a
    parsed value outlives the document, `.Clone()` it. See §7.
+4. **`HttpClient` sends no `User-Agent`; `URLSession` always does.** Fantrax's edge answers **403**
+   to a request with no UA at all — it doesn't inspect the value, only its presence. Every roster
+   sync failed until `FantraxApi` set one. Any platform difference where macOS supplies a default
+   that .NET does not is a candidate for this class of bug. See §7b.
 
 ## 7. Bug found and fixed during the port
 
@@ -157,6 +161,33 @@ Fixed in `PatchOperation.TryParse` (`rawValue.Clone()`), regression test
 
 Live impact had it shipped: polling would silently stop updating scores, counts and batters while
 looking healthy.
+
+## 7b. Second bug found by the port — Fantrax 403s a request with no User-Agent
+
+Found in Phase 7b, the first time the shell ran against the **real** Fantrax API with a roster
+configured. Every sync failed with `Roster sync failed: Fantrax API returned HTTP 403`.
+
+Isolated with a 2×2 (method × client), because two things differed at once:
+
+| | `getStandings` | `getTeamRosterInfo` |
+|---|---|---|
+| `HttpClient`, no UA | **403** | **403** |
+| `HttpClient`, any UA | 200 | 200 |
+
+So the method was irrelevant and the `User-Agent` was everything. `onDeck/1.0`, `curl/8.0` and a
+browser string all work — the value is not inspected, only its presence — so `FantraxApi` sends an
+honest `onDeck/1.0` rather than impersonating a browser. MLB's `statsapi` and `midfield` endpoints
+are unaffected (200 with or without).
+
+Why Swift never hit it: `URLSession` always sends a default UA
+(`onDeck/1.0 CFNetwork/… Darwin/…`); .NET's `HttpClient` sends none unless told to.
+
+Fixed in `FantraxApi.PostRequestAsync`; regression test
+`FantraxApiTeamsTests.FetchTeamsAsync_SendsAUserAgent`. The header lives in Core beside the request
+it belongs to, not in the composition root, so the test travels with it.
+
+**Live impact had it shipped:** the app would have installed, launched, shown a tray icon and
+never loaded a single player.
 
 ## 8. Deviations from the Swift original
 

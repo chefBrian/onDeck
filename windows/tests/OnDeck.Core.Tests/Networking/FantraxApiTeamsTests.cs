@@ -46,6 +46,21 @@ public class FantraxApiTeamsTests
     }
 
     [Fact]
+    public async Task FetchTeamsAsync_SendsAUserAgent()
+    {
+        // Fantrax's edge returns 403 to any request with no User-Agent at all. macOS URLSession
+        // always sends one, so the Swift app never had to say so; .NET's HttpClient sends none
+        // by default, which 403'd every roster sync until this was added.
+        var (api, handler) = Create(StandingsJson);
+
+        await api.FetchTeamsAsync("lg123");
+
+        var userAgent = handler.Requests[^1].Headers.UserAgent.ToString();
+        Assert.False(string.IsNullOrWhiteSpace(userAgent));
+        Assert.Contains("onDeck", userAgent, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task FetchTeamsAsync_CollectsDedupesAndSortsByName()
     {
         var (api, _) = Create(StandingsJson);
