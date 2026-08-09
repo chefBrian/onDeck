@@ -1,16 +1,19 @@
 # onDeck Windows Port — Handoff
 
-**As of:** 2026-08-08, end of Phase 8. Branch: `main`.
+**As of:** 2026-08-09, end of Phase 9. Branch: `main`.
 
-**State:** `OnDeck.Core` is **complete** and the shell has its **whole UI** — tray icon, flyout with
-the four player sections and footer, floating panel with a persisted frame, and now the Settings
-window, all driven by the real engine. **644 tests green (509 Core + 135 App)**, working tree clean,
-single-file publish verified. The toast spike passed, so Phase 9's stack is settled. **Phase 9 is
-notifications**, and it starts with a target-framework bump (§10).
+**State:** the app is **feature-complete against the Mac** — tray icon, flyout, floating panel,
+Settings window, and now real toasts for all five notification types, all driven by the real engine.
+**691 tests green (511 Core + 180 App)**, working tree clean, single-file publish verified. It ships
+as **`onDeck.exe`** from Phase 9 on. **Phase 10 is system integration and ship**; Phase 11 is parity
+QA.
 
-**The app is now configurable from inside itself** — the hand-written `settings.json` that Phases
-7b and 8 relied on is no longer the only way in. One cosmetic issue is open and parked by owner
-decision: the acrylic backdrop (`ACRYLIC-OPEN-ISSUE.md`).
+**Phase 9 found the third and worst port bug** (§7c): every player headshot had been silently
+discarded since the cache landed, because the port checked for PNG against an endpoint that serves
+JPEG. Nothing logged it and no test caught it — the fixture was a PNG.
+
+One cosmetic issue is open and parked by owner decision: the acrylic backdrop
+(`ACRYLIC-OPEN-ISSUE.md`).
 
 ---
 
@@ -23,7 +26,7 @@ decision: the acrylic backdrop (`ACRYLIC-OPEN-ISSUE.md`).
    locally but will not be on a fresh clone). Holds the gotchas the port must preserve.
 3. The Swift source for the phase you're on. **The Swift file named in each phase is the
    authoritative spec** — read it before writing anything.
-4. `windows/plans/*.md` — the executed phase plans (Phases 0–7b). Each has a "Deviations" section
+4. `windows/plans/*.md` — the executed phase plans (Phases 0–9). Each has a "Deviations" section
    recording where the C# port intentionally differs from Swift and why, and 7b also has an
    "Execution notes" section for corrections found while running the plan.
 5. `windows/ACRYLIC-OPEN-ISSUE.md` — **only** if you intend to touch the flyout/panel backdrop.
@@ -114,7 +117,10 @@ windows/
 │   ├── App.xaml(.cs)         composition root; palette application; Float wiring
 │   ├── SettingsStore.cs      ISettingsStore + the shell-only FloatingPanelFrame
 │   ├── Platform/             DwmBackdrop, MonitorWorkArea, ShellLog, SingleInstance,
-│   │                         TrayGeometry, ExternalLink
+│   │                         TrayGeometry, ExternalLink, StartupPlan
+│   ├── Notifications/        ToastPlanner (+ ToastPlan, ToastIds), ToastActivation,
+│   │                         ToastPresenter (IToastPresenter + WindowsToastPresenter),
+│   │                         ToastService
 │   ├── Tray/                 TrayIconService, ThemeWatcher, TrayIconVariant
 │   ├── Views/                ThemePalette, DisplayFormatting, RowViewModels, FlyoutSections
 │   │                         (+ FlyoutInputFactory), RefreshButtonModel, TeamLogoStore,
@@ -130,8 +136,9 @@ windows/
 └── tests/OnDeck.App.Tests/   net10.0-windows10.0.17763.0, same stack
     ├── StubHttpMessageHandler.cs     its own copy — the two test projects don't reference
     │                                 each other
-    └── RecordingSettingsStore.cs     ISettingsStore double that logs which keys were written,
-                                      in order
+    ├── RecordingSettingsStore.cs     ISettingsStore double that logs which keys were written,
+    │                                 in order
+    └── RecordingToastPresenter.cs    IToastPresenter double with an ordered call log
 ```
 
 `Microsoft.Extensions.TimeProvider.Testing` (10.8.0, pinned the same in both test projects) is a
@@ -164,7 +171,7 @@ the last once drained). `FakeTimeProvider` for anything clock-driven. Tests asse
 POST bodies**, not just response parsing — the `hydrate` terms, timecode formats and the Fantrax
 `period` param are what break silently.
 
-### Four traps that already bit (engine)
+### Six traps that already bit (engine)
 
 1. **`Uri.ToString()` unescapes for display.** Assert percent-encoding against `AbsoluteUri`.
 2. **Raw string literals:** JSON fixtures with `}}` runs collide with `$$"""…{{x}}…"""`
@@ -175,6 +182,15 @@ POST bodies**, not just response parsing — the `hydrate` terms, timecode forma
    to a request with no UA at all — it doesn't inspect the value, only its presence. Every roster
    sync failed until `FantraxApi` set one. Any platform difference where macOS supplies a default
    that .NET does not is a candidate for this class of bug. See §7b.
+5. **A payload-format check is a guess about a server you don't own.** `HeadshotCache` asserted PNG
+   against an endpoint that serves JPEG and silently discarded every image for weeks, because the
+   test fed a PNG fixture. When a validator can reject real data, prove the shape against the live
+   endpoint once — `curl`/`Invoke-WebRequest` and look at the first eight bytes. See §7c.
+6. **Never block the Dispatcher on a Core task.** Core has no `ConfigureAwait(false)` anywhere by
+   design, so its continuations are posted back to the captured context. `SomeCoreTask().Wait()` on
+   the UI thread deadlocks instantly and looks like a hang with no exception. This bit the
+   `--test-toast` path in Phase 9; the fix is `Task.Run(...)`, where there is no
+   `SynchronizationContext` to post back to.
 
 ### XAML traps from Phase 7b
 
@@ -238,6 +254,43 @@ it belongs to, not in the composition root, so the test travels with it.
 **Live impact had it shipped:** the app would have installed, launched, shown a tray icon and
 never loaded a single player.
 
+## 7c. Third bug found by the port — every headshot was thrown away
+
+Found in Phase 9, checking why a test toast had no image: `%LOCALAPPDATA%\onDeck\Headshots` did not
+exist at all, after weeks of live roster syncs.
+
+`HeadshotCache.DownloadAsync` validated the payload against the **PNG** signature. The endpoint
+returns a **JPEG**:
+
+```
+https://img.mlbstatic.com/…/d_people:generic:headshot:67:current.png/w_128/…/headshot/67/current
+→ FF D8 FF E0 … (JFIF)
+```
+
+The `.png` in that URL is the `d_people:generic:headshot:67:current.png` **default-image**
+parameter — the placeholder served for an unknown player — not an output format. So `IsPng`
+returned false for every real headshot and `DownloadAsync` returned before writing, silently, on
+every player, forever.
+
+Why Swift never hit it: it validates with `NSImage(data:) != nil` (`HeadshotCache.swift:36`), which
+decodes JPEG happily. The port narrowed "is this a decodable image" to "is this a PNG".
+
+Why the tests missed it: `HeadshotCacheTests` fed **PNG fixtures**. Same shape as §7 — the test
+asserted something the real endpoint never does.
+
+**`TeamLogoCache` has the identical check and is fine.** Its endpoint
+(`midfield.mlbstatic.com/v1/team/{id}/spots/{size}`) genuinely returns PNG — verified — which is why
+logos have always rendered in the flyout. Don't "fix" it.
+
+Fixed in `HeadshotCache` (`IsPng` → `IsImage`, accepting PNG/JPEG/GIF signatures); regression test
+`HeadshotCacheTests.PrefetchAsync_WritesTheJpegTheEndpointActuallyReturns`. The filename stays
+`{playerId}.png` whatever the bytes are, exactly as Swift writes it — WPF's image loader and the
+toast renderer both decode by content, not extension. Verified live: a real roster sync now caches
+24 headshots.
+
+**Live impact had it shipped:** no notification would ever have carried a player image, and nothing
+would have logged a reason.
+
 ## 8. Deviations from the Swift original
 
 Each phase plan has its own list; the ones with ongoing consequences:
@@ -289,6 +342,16 @@ Each phase plan has its own list; the ones with ongoing consequences:
 | **Phase 8:** the relative last-synced age is computed per render, not live-ticking | SwiftUI's `Text(date, style: .relative)` re-renders itself on a timer. Here it refreshes on `StateChanged`, which fires every poll cycle during a live game and after every settings write |
 | **Phase 8:** `NSApplication.setActivationPolicy` not ported; the window is released on close instead | It exists to let macOS reclaim ~230 MB of Settings infrastructure. Windows has no equivalent; dropping the reference in `Closed` and rebuilding on the next request is the nearest thing |
 | **Phase 8:** no test instantiates `SettingsWindow` | WPF fails the *build* on a bad `x:Name`, template or resource key, and no headless test can judge colour, weight or size. The plain-class tests plus a human pass are the guard; an STA `Application` fixture would add fragility for nothing |
+
+| **Phase 9:** `requestPermission()` not ported | Windows has no per-app notification authorisation prompt, so there is nothing to request and no `authorizationStatus` for `send` to gate on |
+| **Phase 9:** `NotificationDelegate.willPresent` not ported | It exists to show notifications while the app is frontmost; Windows shows toasts regardless |
+| **Phase 9:** `DismissalBag` not ported; `ExpirationTime` replaces it | It is a hand-rolled timer pool standing in for an expiry field macOS lacks. Windows has the field |
+| **Phase 9:** not-in-lineup toasts carry a `Group`; macOS sweeps ids by prefix | `History.Remove` is exact-match, so a game-scoped purge needs a real group and `RemoveGroup` |
+| **Phase 9:** a toast's click URL is restricted to `http`/`https` | The argument arrives from outside the process and reaches `ShellExecute`, which launches any registered protocol handler. We only ever write those two schemes |
+| **Phase 9:** the assembly is renamed to `onDeck` (`onDeck.exe`) | An unpackaged toast takes its header from the exe, so without it every toast reads "OnDeck.App". `PORT_PLAN.md` Decision 4 already settled the identity; Phase 9 only chose when. Owner-confirmed |
+| **Phase 9:** `--test-toast` has no macOS counterpart | Every other behaviour here needs a live at-bat to observe, and the parts a human must judge are the parts no test covers. It sends one of each type and exits without building a shell or taking the mutex, so it works whether or not the app is running |
+| **Phase 9:** `IToastPresenter` sits between `ToastService` and the toast API | `ToastNotificationManagerCompat` is static and needs a live notification platform. The seam moves every routing and gating decision onto the tested side and leaves a branch-free adapter |
+| **Phase 9:** `LoggingNotificationSink` deleted | It was the Phase 5 stand-in for exactly this service |
 
 `OnDeck.Core` has `<InternalsVisibleTo Include="OnDeck.Core.Tests" />` for the `internal` seams on
 `GameMonitor` (`TrackGames`, `NextEventDelay`, `SelectGamesToPoll`, `PollSingleGameAsync`,
@@ -351,6 +414,13 @@ taskbar). Phase 7a rows kept; 7b rows appended:
 | **8:** Sync Now → "Syncing…" → "Last synced: N seconds ago" + "N players loaded" | **Pass** |
 | **8:** Hide bench players re-filters the flyout immediately, no network sync | **Pass** |
 | **8:** closing Settings does not quit the app; the tray icon survives | **Pass** |
+| **9:** `--test-toast` sends all five types; header reads **onDeck** | **Pass** |
+| **9:** copy matches `NotificationManager.swift`; results titled with just the player name | **Pass** |
+| **9:** circular headshots render on the toasts | **Pass** — after the §7c fix; imageless before it |
+| **9:** click with the app **running** opens the stream link | **Pass** |
+| **9:** click with the app **dead** cold-starts `onDeck.exe -ToastActivated -Embedding`, opens the link, leaves exactly one tray icon | **Pass** — activation logged 6.5 s after the send, argument round-tripped intact, `count: 1` |
+| **9:** result toasts self-expire from the Action Center after ~30 s; the other three stay | **Not separately timed** — `ExpirationTime` is set and the toasts behaved; worth a deliberate look on the next pass |
+| **9:** live-game behaviour — toasts fire at the right moments, purge on state change, not-in-lineup clears at first pitch, all purge on day rollover | **Not run** — needs a live game. See the QA list below |
 
 ## 8c. Phase 8 status
 
@@ -393,67 +463,81 @@ exists for exactly this case). Enumerate the league's teams the way `FetchTeamsA
 `getStandings` to `https://www.fantrax.com/fxpa/req?leagueId=<leagueId>` and collect every
 `{teamId, content}` pair. **Send a User-Agent** or it 403s (§7b).
 
-## 9. Next up — Phase 9: notifications
+## 8d. Phase 9 status
 
-*(Windows PC. Phases 9–11 need a human at the keyboard for the manual Win11 checks.)*
+**Phase 9 (done):** real toasts. Four plain classes plus one thin adapter, mirroring the split 7b
+and 8 established. Plan: `plans/2026-08-09-phase-9-notifications.md`.
 
-**Spec:** `onDeck/Notifications/NotificationManager.swift`. Write the plan first, per the workflow
-in §2.
+- **`ToastPlanner`** (with `ToastPlan` and `ToastIds`) — every user-visible string and every
+  identifier, and the five toggle guards. Returns `null` when a type is switched off.
+- **`ToastActivation`** — the click URL's round trip through the toast argument, plus an
+  `http`/`https` allow-list on the way back out.
+- **`IToastPresenter` / `WindowsToastPresenter`** — the only file that touches
+  `ToastContentBuilder` / `ToastNotificationManagerCompat`. Branch-free; every decision was already
+  made upstream.
+- **`ToastService : INotificationSink`** — routes Core's calls, looks up the headshot, and picks the
+  purge target. Fully unit-tested because of the presenter seam.
+- **`StartupPlan`** — what a launch is *for*: shell, toast activation, test toasts, or duplicate.
 
-**Start with the target-framework bump.** `OnDeck.App` targets bare `net10.0-windows`, which does
-not expose the toast compat APIs. Move it to `net10.0-windows10.0.17763.0` and add
-`Microsoft.Toolkit.Uwp.Notifications` 7.1.3 — `spikes/ToastActivationSpike/` already has a working
-csproj; copy its settings. Do this as its own first task, so a framework-bump build break can't be
-mistaken for a toast bug. **`OnDeck.App.Tests` also targets `net10.0-windows`** — check whether it
-needs the same bump to keep referencing the app.
+**The API trap, confirmed by compiling against the package before the plan was written:**
+`ToastNotificationManagerCompat.OnActivated` is typed as the library's own `OnActivated` delegate,
+**not** `Action<ToastNotificationActivatedEventArgsCompat>`. A lambda converts; a variable or method
+group of that `Action<T>` type gives `CS0029`. Also, the lambda's parameter cannot be named `e`
+inside `OnStartup` — `StartupEventArgs e` owns that name and C# rejects the shadow (`CS0136`).
 
-Build `ToastService : INotificationSink` (`App/Notifications/`), replacing the
-`LoggingNotificationSink` the composition root passes today. All five types, per the porting map in
-`PORT_PLAN.md`:
+**`--test-toast` is the phase's own diagnostic.** `onDeck.exe --test-toast` sends one of each type
+and exits, without building a shell or taking the single-instance mutex, so it works whether or not
+the app is running. It prefetches its own three headshots first — otherwise the toasts come up
+imageless (those players aren't on the roster) and read as "headshots are broken". Everything else
+in Phase 9 needs a live at-bat to observe.
 
-- **batting / pitching** — tag = the stable id (`batting-<gamePk>-<playerId>`), so
-  `History.Remove(tag)` implements `PurgeBatting`/`PurgePitching`.
-- **notInLineup** — stable tag **plus** `Group = "notInLineup-<gamePk>"`, because
-  `PurgeNotInLineupAsync` is game-scoped and `History.Remove` is exact-match; `RemoveGroup` is the
-  Windows analogue of the Mac's id-prefix sweep.
-- **atBatResult / pitchingResult** — no stable tag, `ExpirationTime` = +30 s (the auto-dismiss
-  analogue).
-- `PurgeAllAsync` clears history and scheduled toasts.
-- Click opens the toast's click URL (stream link, or the Fantrax page for notInLineup) — **not**
-  just foregrounding the app.
+**Two things this phase deliberately did not touch:** `INotificationSink` (Core already had the
+exact contract) and the per-type toggles' storage (Phase 8 ships the checkboxes that write them).
+The one Core change was the §7c bug fix.
 
-**The per-type toggles are the sink's job, not Core's.** Core calls `INotificationSink`
-unconditionally; each method checks its `ISettingsStore` flag first and no-ops when off. Phase 8
-ships the five checkboxes that write those flags, so this is exercisable end to end the day it
-lands.
+## 9. Next up — Phase 10: system integration and ship
 
-**What Phase 9 can reuse rather than reinvent:**
+*(Windows PC. Phases 10–11 need a human at the keyboard for the manual Win11 checks.)*
 
-- `spikes/ToastActivationSpike/FINDINGS.md` — hot *and* cold activation both passed. Two findings
-  bind this phase: no Start Menu shortcut or AUMID entry is created (activation routes through the
-  registered CLSID alone), and **the single-instance guard must not kill a `-ToastActivated` launch
-  before its activation is handled** — `App.OnStartup` currently shuts a second instance down
-  unconditionally, and that path needs the toast-activation exception.
-- `HeadshotCache` already caches images to disk and hands back a path; toasts load from a path.
-- `RecordingNotificationSink` (Core.Tests) shows the call sequences Core actually makes.
+**Spec:** `App/AppState.swift` (the platform portions) and `PORT_PLAN.md` Phase 10. Write the plan
+first, per the workflow in §2.
 
-**Keep the testable rules in a plain class** — tag construction, expiry, which toggle gates which
-type — with tests in `OnDeck.App.Tests`, and let a thin `ToastService` call the toast API. The
-`ToastNotificationManagerCompat` calls themselves can't be unit-tested; everything around them can.
-That split is what made 7b's and 8's rules verifiable, and untested XAML/API glue is exactly where
-7b's bugs lived.
+**`SystemEventsWatcher`.** `SystemEvents.PowerModeChanged` (`.Resume`) and
+`SystemEvents.SessionSwitch` (`.SessionUnlock`) → `AppOrchestrator.HandleSystemResumeAsync()`, which
+already debounces 30 s and invalidates the monitor's timecodes internally. Two cautions: these
+events arrive on a **background thread**, so marshal to the Dispatcher (the context Core was
+constructed on), and `SystemEvents` needs a live message pump — it has one here, but it leaks the
+handler unless you unsubscribe in `OnExit`.
 
-**Correction to `PORT_PLAN.md`:** its Phase 7 row says the row control shows a *headshot*. It does
-not — `MenuBarView.swift` renders team logos in the score block and no player headshots at all, and
-that is what shipped. `HeadshotCache` exists for notification images only. The parity-checklist line
-about headshots in the flyout and floating panel is wrong; fix it when Phase 9 touches that
-checklist.
+**`StartupManager`.** The HKCU `Run` key, **default off** (`PORT_PLAN.md` Decision 3). The toggle
+belongs in the Settings window's **Display** card; the write goes through `SettingsEditor` alongside
+the other nine. Note that launch-at-login is deliberately **outside** `ISettingsStore` —
+`PORT_PLAN.md` scopes it as shell-only, like the floating-panel frame — so it reads and writes the
+registry directly rather than the JSON. The value must be the **quoted full exe path**, and it goes
+stale exactly like the toast COM registration if the exe moves.
 
-**Shared quirk worth raising with the owner (not a port bug):** configuring the roster *after*
-launch never schedules the 8 AM daily re-sync. `AppState.start()` (`AppState.swift:116`) returns
-early on an empty URL, before `scheduleDailyRefresh()`, and `AppOrchestrator.StartAsync` mirrors it
-exactly. The next launch schedules it normally. Both platforms behave the same, so Phase 8 left it
-alone rather than silently diverging.
+**App and window icon.** Phase 8 and 9 both left this alone. The three `.ico`s in `Assets/` are tray
+variants (white / dark / green on transparency) and none is a general-purpose app icon — a white
+one is invisible on a light title bar. This needs a real app icon and an `<ApplicationIcon>`, which
+is also what Explorer and the taskbar show for `onDeck.exe`.
+
+**Ship.** The publish recipe is already green and produces a ~82 MB single file. What is untested is
+the **clean machine**: run it on a Windows 11 box or VM with no .NET installed, and confirm the tray
+icon, a roster sync, and a toast all work there. Expect the SmartScreen "More info → Run anyway"
+prompt — `PORT_PLAN.md` Decision 5 ships unsigned deliberately.
+
+**What Phase 10 can reuse rather than reinvent:**
+
+- `StartupPlan` already owns the launch matrix; a new launch mode is a case there plus a test, not
+  another `if` in `OnStartup`.
+- `ShellLog` (`%LOCALAPPDATA%\onDeck\shell.log`) is how the toast work was verified without a
+  debugger. Sleep/wake and unlock are exactly the events you cannot watch interactively — log them.
+- `spikes/ToastActivationSpike/FINDINGS.md` finding 2: the registered COM path is the **published
+  exe path**, so moving or deleting the exe leaves a dangling registration. If an uninstaller is
+  ever added it must call `ToastNotificationManagerCompat.Uninstall()`.
+
+**Do not** re-verify sleep/wake by reasoning about it. `HandleSystemResumeAsync` has a 30-second
+debounce, so a test that triggers it twice in quick succession proves nothing about the second call.
 
 ### Phase 6 debts — status after Phase 7
 
@@ -466,10 +550,21 @@ alone rather than silently diverging.
 4. **Double-launch.** *Verified in 7b* — second launch exits 0 and one instance remains.
 5. Still not run: display scaling 100/125/150/200%, docked taskbar edges, Quit leaving no process.
 
-### Outstanding QA carried into Phase 9
+### Outstanding QA carried into Phase 10
 
-Built but never exercised by a human. None of it blocks Phase 9; roll it into the next manual pass:
+Built but never exercised by a human. None of it blocks Phase 10; roll it into the next manual pass.
+**Most of this list wants one live game day** — batching it into a single sitting is the efficient
+way to clear it:
 
+- **Notifications against a live game** (Phase 9's only unverified surface) — batting and pitching
+  toasts fire at the same moments the Mac's do; a stale toast is purged when the player's state
+  changes; not-in-lineup toasts for a game clear when that game goes live; every toast clears on a
+  schedule refresh / day rollover. The mechanics (send, click, cold-start activation, headshots)
+  are all verified; what is unverified is *when* Core calls the sink, which is Core's logic under
+  real data.
+- **Each of the five notification toggles suppresses its own type end to end** — the planner is
+  unit-tested and `--test-toast` respects them, but nobody has flipped a checkbox and watched a
+  live toast not arrive.
 - **Floating panel behaviour end to end** — opens from Float (footer *and* tray), stays on top,
   does not steal focus, drags by background, remembers its frame across a restart, auto-opens when
   `alwaysOpenPopout` is true. Only its opaque backdrop has been observed. **The Always-open-popout
@@ -480,6 +575,8 @@ Built but never exercised by a human. None of it blocks Phase 9; roll it into th
 - **Stream-link click** → opens the right service per `StreamLinkRouter`.
 - **Hover states, and the flyout at 125/150/200% scaling.**
 - Display scaling, docked taskbar edges, second monitor, Quit leaving no process (from Phase 6).
+- **Result toasts self-expiring after ~30 s** — `ExpirationTime` is set and the toasts behaved, but
+  the timing was never deliberately watched.
 
 ### What the shell must honour when it wires up Core
 
@@ -504,18 +601,16 @@ Built but never exercised by a human. None of it blocks Phase 9; roll it into th
 - `OrchestratorHarness` — declares players/games once and derives the Fantrax, MLB-search, schedule
   and cached-roster payloads from them; `Run`/`RunStarted` wrap the context and clean up.
 
-## 10. After Phase 9 — Phases 10–11
+## 10. After Phase 10 — Phase 11
 
-System integration & ship (10), parity QA (11). See `PORT_PLAN.md` for each phase's scope and the
-parity checklist.
+Parity QA (11): run the Mac and Windows apps side by side over live game days against the checklist
+in `PORT_PLAN.md`, and fix the gaps. The QA list in §9 above is the head start — most of it wants
+the same live game day.
 
-**Phase 10** wires `SystemEventsWatcher` (`PowerModeChanged.Resume`, `SessionSwitch.SessionUnlock`
-→ `HandleSystemResumeAsync`, which already debounces 30 s inside Core) and `StartupManager` (HKCU
-Run key, default off). The Run-key toggle wants a row in the Settings window's **Display** card —
-`SettingsEditor` is where its write goes, alongside the other nine, and note that launch-at-login
-is deliberately **outside** `ISettingsStore` (`PORT_PLAN.md`: shell-only, like the panel frame).
-Phase 10 also ships the app/window icon, which Phase 8 left alone: the tray `.ico`s are white,
-dark and green variants and none of them is a general-purpose window icon.
+**The parity checklist has one known-wrong line.** It claims headshots render in the flyout and
+floating panel. They do not, and never did: `MenuBarView.swift` renders team logos in the score
+block and no player headshots at all. `HeadshotCache` is for notification images only — which, as of
+§7c, is finally true in the port too. Correct that line during Phase 11.
 
 ## 11. Verification before claiming a phase done
 

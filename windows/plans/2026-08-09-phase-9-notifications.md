@@ -1600,7 +1600,9 @@ git commit -m "phase 9: verification results and phase 10 handoff"
 
 ## Deviations from the Swift original
 
-*(Filled in during execution. The entries below are the ones this plan commits to up front.)*
+*Executed 2026-08-09. The list below is as written up front; nothing in the six planned tasks
+diverged. Two things happened during execution that the plan did not anticipate — both recorded
+under "Execution notes" below.*
 
 | Deviation | Why |
 |---|---|
@@ -1614,6 +1616,43 @@ git commit -m "phase 9: verification results and phase 10 handoff"
 | `--test-toast` has no macOS counterpart | Every other behaviour here needs a live at-bat to observe, and the parts a human must judge are the parts no test covers |
 | `IToastPresenter` sits between `ToastService` and the toast API | `ToastNotificationManagerCompat` is static and needs a live notification platform. The seam moves every routing and gating decision onto the tested side |
 | `LoggingNotificationSink` deleted | It was the Phase 5 stand-in for exactly this service |
+
+## Execution notes
+
+**1. A third port bug surfaced during verification, and it belonged to this phase.** The first test
+toast came up with no image, and `%LOCALAPPDATA%\onDeck\Headshots` did not exist at all after weeks
+of live roster syncs. `HeadshotCache` validated the PNG signature against an endpoint that serves
+**JPEG** — the `.png` in the request path is the `d_people:generic:headshot` default-image
+parameter, not an output format — so every headshot had been silently discarded since the cache
+landed. Swift validates with `NSImage(data:)`, which accepts JPEG; the port narrowed the check. The
+existing tests missed it because they fed PNG fixtures, the same shape of miss as the §7 diffPatch
+bug.
+
+Fixed in Core (`IsPng` → `IsImage`, accepting PNG/JPEG/GIF) with regression test
+`PrefetchAsync_WritesTheJpegTheEndpointActuallyReturns`, and verified live rather than by fixture: a
+real roster sync now caches 24 headshots, all JPEG. `TeamLogoCache` carries the identical check and
+is **correct** — its endpoint really does return PNG, verified, which is why logos always rendered.
+Written up as HANDOFF §7c. This is the one Core change the phase made, against the plan's own "do
+not add anything to Core" constraint — a defect fix, not new surface, and Phase 9's deliverable was
+incomplete without it.
+
+**2. The `--test-toast` path deadlocked itself, once.** Making the diagnostic prefetch its own
+headshots (needed, because its three players aren't on the user's roster, so the toasts came up
+imageless and read as "still broken") introduced `PrefetchAsync().Wait()` on the Dispatcher thread
+during `OnStartup`. Core has no `ConfigureAwait(false)` anywhere by design, so the continuation was
+posted back to the very thread doing the waiting: the process hung with no exception and no log
+line. Fixed by moving the whole send to `Task.Run` — where there is no `SynchronizationContext` to
+post back to — with a bounded 10 s HTTP timeout and `Shutdown` in the continuation. Added to the
+engine trap list as HANDOFF §6, trap 6.
+
+**Verification results.** Automated gates: 691 tests green (511 Core + 180 App, two `Passed!`
+lines), Core at zero package references, single-file publish green. Manual, owner-confirmed: all
+five toasts with the `onDeck` header, correct copy, circular headshots, click-through with the app
+running, and the cold path — with the app dead, clicking a toast cold-started
+`onDeck.exe -ToastActivated -Embedding`, logged the activation 6.5 s after the send with the
+argument round-tripped intact, opened the link, and left exactly one tray icon. That last one is
+what `StartupPlan` exists for. What remains unverified needs a live game and is listed in HANDOFF
+§9's QA carry-over.
 
 ## Notes carried forward
 
