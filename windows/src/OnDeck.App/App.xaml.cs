@@ -1,5 +1,7 @@
 using System.Net.Http;
 using System.Windows;
+using System.Windows.Threading;
+using Microsoft.Toolkit.Uwp.Notifications;
 using OnDeck.App.Notifications;
 using OnDeck.App.Platform;
 using OnDeck.App.Tray;
@@ -23,17 +25,47 @@ public partial class App : Application
     private TeamLogoStore? _logos;
     private SettingsStore? _settingsStore;
     private AppOrchestrator? _orchestrator;
+    private bool _exitAfterActivation;
 
     protected override void OnStartup(StartupEventArgs e)
     {
-        if (!SingleInstance.TryAcquire(out var instance))
+        // Wired before anything else: a toast-activated cold start fires this within ~200 ms of
+        // startup (spike FINDINGS.md). The event takes the library's own OnActivated delegate,
+        // so this must be a lambda - an Action<T> variable will not convert. The parameter
+        // cannot be named `e`: OnStartup's own StartupEventArgs already owns that name in the
+        // enclosing scope, and C# rejects the shadow (CS0136).
+        ToastNotificationManagerCompat.OnActivated += activation =>
+            OnToastActivated(activation.Argument);
+
+        var acquiredMutex = SingleInstance.TryAcquire(out var instance);
+        var action = StartupPlan.Decide(
+            acquiredMutex,
+            ToastNotificationManagerCompat.WasCurrentProcessToastActivated(),
+            StartupPlan.WantsTestToasts(e.Args));
+
+        if (action != LaunchAction.RunShell) instance?.Dispose();
+
+        switch (action)
         {
-            // Already running: hand the click to the live instance instead of adding a second
-            // tray icon. A -ToastActivated launch never lands here - COM routes those to the
-            // running process, which already holds the mutex.
-            SingleInstance.SignalExistingInstance();
-            Shutdown();
-            return;
+            case LaunchAction.SendTestToastsAndExit:
+                SendTestToasts();
+                Shutdown();
+                return;
+
+            case LaunchAction.HandleToastActivationAndExit:
+                // The handler above opens the link and shuts us down. This is the safety net for
+                // an activation that never arrives - without it the process would linger with no
+                // window and no tray icon.
+                _exitAfterActivation = true;
+                ExitAfter(TimeSpan.FromSeconds(5));
+                return;
+
+            case LaunchAction.SignalExistingAndExit:
+                // Already running: hand the click to the live instance instead of adding a
+                // second tray icon.
+                SingleInstance.SignalExistingInstance();
+                Shutdown();
+                return;
         }
 
         _singleInstance = instance;
@@ -132,6 +164,68 @@ public partial class App : Application
         }
 
         _settingsWindow.Activate();
+    }
+
+    /// <summary>
+    /// A toast was clicked. Fires on a background thread, so everything here hops to the
+    /// Dispatcher — the context <c>AppOrchestrator</c> was constructed on.
+    /// </summary>
+    private void OnToastActivated(string argument)
+    {
+        var url = ToastActivation.UrlFrom(argument);
+        ShellLog.Append(
+            $"[Toast] activated argument=\"{argument}\" url={url?.AbsoluteUri ?? "(none)"}");
+
+        Dispatcher.Invoke(() =>
+        {
+            if (url is not null) ExternalLink.Open(url);
+
+            // This process exists only to service the click.
+            if (_exitAfterActivation) Shutdown();
+        });
+    }
+
+    /// <summary>
+    /// <c>--test-toast</c>: one of each type, so the look, the headshot, the click-through and the
+    /// Action Center behaviour can be checked without waiting for a live at-bat. Toggles are
+    /// respected — whether a checkbox actually silences its type is one of the things to check.
+    /// </summary>
+    private static void SendTestToasts()
+    {
+        var settings = new SettingsStore();
+        var http = new HttpClient();
+        var headshots = new HeadshotCache(http, HeadshotCache.DefaultCacheDirectory());
+        var service = new ToastService(settings, headshots, new WindowsToastPresenter());
+
+        // Mookie Betts - a headshot is likely already cached from a roster sync.
+        const int playerId = 605141;
+        const int gamePk = 776543;
+        var stream = new Uri("https://www.mlb.com/tv/g776543");
+
+        service.NotifyBattingAsync(
+            "Mookie Betts", playerId, gamePk, "SF 1 - LAD 2", "Bot 3", stream).Wait();
+        service.NotifyPitchingAsync(
+            "Logan Webb", 657277, gamePk, "SF 1 - LAD 2", "Top 4", stream).Wait();
+        service.NotifyAtBatResultAsync(
+            "Mookie Betts", playerId, "Home run to left field", stream).Wait();
+        service.NotifyPitchingResultAsync(
+            "Logan Webb", 657277, "Logan Webb has been pulled from the game", stream).Wait();
+        service.NotifyNotInLineupAsync(
+            "Freddie Freeman", 518692, gamePk, "SF @ LAD",
+            new Uri("https://www.fantrax.com/fantasy/league/lg1/home")).Wait();
+
+        ShellLog.Append("[Toast] sent the --test-toast set");
+    }
+
+    private void ExitAfter(TimeSpan delay)
+    {
+        var timer = new DispatcherTimer { Interval = delay };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            Shutdown();
+        };
+        timer.Start();
     }
 
     protected override void OnExit(ExitEventArgs e)
