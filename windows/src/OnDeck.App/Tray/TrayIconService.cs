@@ -8,8 +8,8 @@ namespace OnDeck.App.Tray;
 
 /// <summary>
 /// The tray presence: an icon that greens up when a player is active, a tooltip carrying the
-/// same text the Mac menu bar title would, and a right-click menu. Float and Settings arrive
-/// with the windows they open, in Phases 7 and 8.
+/// same text the Mac menu bar title would, and a right-click menu. Settings arrives with its
+/// window in Phase 8.
 /// </summary>
 public sealed class TrayIconService : IDisposable
 {
@@ -34,6 +34,8 @@ public sealed class TrayIconService : IDisposable
 
     public event Action? OpenRequested;
 
+    public event Action? FloatRequested;
+
     public event Action? RefreshRequested;
 
     public event Action? QuitRequested;
@@ -56,6 +58,9 @@ public sealed class TrayIconService : IDisposable
         var open = new MenuItem { Header = "Open" };
         open.Click += (_, _) => OpenRequested?.Invoke();
 
+        var floatPanel = new MenuItem { Header = "Float" };
+        floatPanel.Click += (_, _) => FloatRequested?.Invoke();
+
         var refresh = new MenuItem { Header = "Refresh" };
         refresh.Click += (_, _) => RefreshRequested?.Invoke();
 
@@ -64,6 +69,7 @@ public sealed class TrayIconService : IDisposable
 
         var menu = new ContextMenu();
         menu.Items.Add(open);
+        menu.Items.Add(floatPanel);
         menu.Items.Add(refresh);
         menu.Items.Add(new Separator());
         menu.Items.Add(quit);

@@ -2,28 +2,48 @@ using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
 using OnDeck.App.Platform;
+using OnDeck.App.Views;
 using OnDeck.Core;
 
 namespace OnDeck.App.Windows;
 
 /// <summary>
-/// The tray flyout. Phase 7 replaces the placeholder content with the real sections; what
-/// matters here is that it lands in the right place, dismisses on focus loss, and gets its
-/// backdrop from DWM with a solid fallback.
+/// The tray flyout: the sections from <c>Views/MenuBarView.swift</c> over a footer, anchored to
+/// the tray icon, dismissed on focus loss, with its backdrop from DWM and a solid fallback.
 /// </summary>
 public partial class FlyoutWindow : Window
 {
     private readonly AppOrchestrator _orchestrator;
+    private readonly TeamLogoStore _logos;
 
-    public FlyoutWindow(AppOrchestrator orchestrator)
+    public FlyoutWindow(AppOrchestrator orchestrator, TeamLogoStore logos)
     {
         _orchestrator = orchestrator;
+        _logos = logos;
         InitializeComponent();
 
         Deactivated += (_, _) => Hide();        // light dismiss
-        _orchestrator.StateChanged += RenderSummary;
-        Closed += (_, _) => _orchestrator.StateChanged -= RenderSummary;
+
+        Sections.RowActivated += OpenStream;
+        Footer.Resync = _orchestrator.ResyncRosterAsync;
+        Footer.FantraxRequested += OpenFantrax;
+        Footer.QuitRequested += () => Application.Current.Shutdown();
+        Footer.FloatRequested += () => FloatRequested?.Invoke();
+
+        _orchestrator.StateChanged += Render;
+        _logos.Changed += Render;
+        Closed += (_, _) =>
+        {
+            _orchestrator.StateChanged -= Render;
+            _logos.Changed -= Render;
+        };
     }
+
+    /// <summary>The footer's Float button; the app owns the panel itself.</summary>
+    public event Action? FloatRequested;
+
+    /// <summary>Keeps the Float glyph in step with whether the panel is open.</summary>
+    public void SetFloating(bool isPanelOpen) => Footer.SetFloating(isPanelOpen);
 
     protected override void OnSourceInitialized(EventArgs e)
     {
@@ -56,7 +76,7 @@ public partial class FlyoutWindow : Window
     /// </summary>
     public void ShowAt(Point? anchorDevicePixels)
     {
-        RenderSummary();
+        Render();
 
         // Measure before placing: SizeToContent means Height is only real after a layout pass.
         Show();
@@ -110,13 +130,27 @@ public partial class FlyoutWindow : Window
         return new Rect(point.X - 12, point.Y - 12, 24, 24);
     }
 
-    private void RenderSummary()
+    private void Render()
     {
-        SummaryText.Text =
-            $"Active {_orchestrator.ActivePlayers.Count}   "
-            + $"In game {_orchestrator.InGamePlayers.Count}   "
-            + $"Upcoming {_orchestrator.UpcomingPlayers.Count}   "
-            + $"Done {_orchestrator.DonePlayers.Count}"
-            + (_orchestrator.SyncError is { } error ? $"\n{error}" : "");
+        var input = FlyoutInputFactory.From(_orchestrator);
+
+        _logos.Prefetch(FlyoutInputFactory.TeamIds(input));
+        Sections.Render(FlyoutSections.Build(input, isFloating: false, _logos.PathFor));
+
+        Footer.ShowsFantrax = _orchestrator.ParsedLeagueId is not null;
+    }
+
+    private void OpenStream(Uri url)
+    {
+        Hide();     // Swift dismisses the menu bar window before opening the link
+        ExternalLink.Open(url);
+    }
+
+    private void OpenFantrax()
+    {
+        if (_orchestrator.ParsedLeagueId is not { } leagueId) return;
+
+        Hide();
+        ExternalLink.Open(new Uri($"https://www.fantrax.com/fantasy/league/{leagueId}/home"));
     }
 }

@@ -18,6 +18,7 @@ public partial class App : Application
     private TrayIconService? _tray;
     private ThemeWatcher? _theme;
     private FlyoutWindow? _flyout;
+    private TeamLogoStore? _logos;
     private AppOrchestrator? _orchestrator;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -44,6 +45,7 @@ public partial class App : Application
         var mlb = new MlbStatsApi(http);
         var fantrax = new FantraxApi(http);
         var headshots = new HeadshotCache(http, HeadshotCache.DefaultCacheDirectory());
+        _logos = new TeamLogoStore(new TeamLogoCache(http, TeamLogoCache.DefaultCacheDirectory()));
 
         _orchestrator = new AppOrchestrator(
             new RosterManager(fantrax, mlb, settings, headshots),
@@ -63,7 +65,7 @@ public partial class App : Application
         _tray.RefreshRequested += () => _ = _orchestrator.ResyncRosterAsync();
         _tray.QuitRequested += Shutdown;
 
-        _flyout = new FlyoutWindow(_orchestrator);
+        _flyout = new FlyoutWindow(_orchestrator, _logos);
 
         _ = _orchestrator.StartAsync();
     }

@@ -106,3 +106,33 @@ public sealed record FlyoutSections
         return "No games today";
     }
 }
+
+/// <summary>
+/// Reads a <see cref="FlyoutInput"/> off the orchestrator. The one place the shell touches
+/// Core's published state, so the layout rules stay testable on plain values.
+/// </summary>
+public static class FlyoutInputFactory
+{
+    public static FlyoutInput From(OnDeck.Core.AppOrchestrator orchestrator) => new()
+    {
+        Active = orchestrator.ActivePlayers,
+        InGame = orchestrator.InGamePlayers,
+        Upcoming = orchestrator.UpcomingPlayers,
+        Done = orchestrator.DonePlayers,
+        IsSyncing = orchestrator.IsSyncing,
+
+        // An unparseable URL and no URL are the same thing to the empty-state copy, and the
+        // orchestrator doesn't publish the raw value.
+        HasRosterUrl = orchestrator.ParsedLeagueId is not null,
+        LoadedPlayerCount = orchestrator.LoadedPlayerCount,
+        Error = orchestrator.SyncError,
+    };
+
+    /// <summary>The team ids whose logos are on screen right now.</summary>
+    public static IEnumerable<int> TeamIds(FlyoutInput input) =>
+        input.Active.Concat(input.InGame)
+            .Select(display => display.Feed)
+            .OfType<LiveFeedData>()
+            .SelectMany(feed => new[] { feed.AwayTeamId, feed.HomeTeamId })
+            .Distinct();
+}
