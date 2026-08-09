@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using OnDeck.App.Platform;
 using OnDeck.Core;
 
 namespace OnDeck.App.Views;
@@ -14,9 +15,11 @@ namespace OnDeck.App.Views;
 /// and the window's code-behind carries no per-toggle handlers.
 /// </para>
 /// </summary>
-public sealed class SettingsEditor(ISettingsStore settings) : INotifyPropertyChanged
+public sealed class SettingsEditor(ISettingsStore settings, StartupManager? startup = null)
+    : INotifyPropertyChanged
 {
     private readonly ISettingsStore _settings = settings;
+    private readonly StartupManager? _startup = startup;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -74,6 +77,24 @@ public sealed class SettingsEditor(ISettingsStore settings) : INotifyPropertyCha
             if (value == _settings.AlwaysOpenPopout) return;
 
             _settings.AlwaysOpenPopout = value;
+            Notify();
+        }
+    }
+
+    /// <summary>
+    /// Windows-only; the Mac app has no equivalent. Backed by the HKCU Run key rather than
+    /// <see cref="ISettingsStore"/> (<c>PORT_PLAN.md</c> scopes it as shell-only), and re-read
+    /// every time because the user can remove the entry from Task Manager's Startup tab while
+    /// this window is open.
+    /// </summary>
+    public bool LaunchAtLogin
+    {
+        get => _startup?.IsEnabled ?? false;
+        set
+        {
+            if (_startup is null || value == _startup.IsEnabled) return;
+
+            _startup.SetEnabled(value);
             Notify();
         }
     }

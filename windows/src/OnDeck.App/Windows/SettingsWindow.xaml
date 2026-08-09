@@ -132,6 +132,8 @@
                               IsChecked="{Binding HideBenchPlayers}" />
                     <CheckBox Content="Always open popout on launch" FontSize="13" Margin="0,4"
                               IsChecked="{Binding AlwaysOpenPopout}" />
+                    <CheckBox Content="Launch onDeck at login" FontSize="13" Margin="0,4"
+                              IsChecked="{Binding LaunchAtLogin}" />
                 </StackPanel>
             </Border>
 

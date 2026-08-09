@@ -24,6 +24,7 @@ public partial class App : Application
     private SettingsWindow? _settingsWindow;
     private TeamLogoStore? _logos;
     private SettingsStore? _settingsStore;
+    private StartupManager? _startup;
     private AppOrchestrator? _orchestrator;
     private SystemEventsWatcher? _systemEvents;
     private bool _exitAfterActivation;
@@ -78,6 +79,7 @@ public partial class App : Application
         // captures this SynchronizationContext and posts its coalesced rebuilds back to it.
         var settings = new SettingsStore();
         _settingsStore = settings;
+        _startup = new StartupManager();
         var http = new HttpClient(new SocketsHttpHandler { MaxConnectionsPerServer = 4 });
         var mlb = new MlbStatsApi(http);
         var fantrax = new FantraxApi(http);
@@ -161,7 +163,7 @@ public partial class App : Application
     {
         if (_settingsWindow is null)
         {
-            _settingsWindow = new SettingsWindow(_orchestrator!, _settingsStore!);
+            _settingsWindow = new SettingsWindow(_orchestrator!, _settingsStore!, _startup!);
             _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         }
 

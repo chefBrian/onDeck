@@ -30,11 +30,12 @@ public partial class SettingsWindow : Window
     /// </summary>
     private bool _isRendering;
 
-    public SettingsWindow(AppOrchestrator orchestrator, ISettingsStore settings)
+    public SettingsWindow(
+        AppOrchestrator orchestrator, ISettingsStore settings, StartupManager startup)
     {
         _orchestrator = orchestrator;
         _settings = settings;
-        _editor = new SettingsEditor(settings);
+        _editor = new SettingsEditor(settings, startup);
 
         InitializeComponent();
 

@@ -1,3 +1,4 @@
+using OnDeck.App.Platform;
 using OnDeck.App.Views;
 
 namespace OnDeck.App.Tests;
@@ -149,6 +150,52 @@ public class SettingsEditorTests
         editor.SelectedTeamId = "";
 
         Assert.Equal("", store.SelectedTeamId);
+    }
+
+    [Fact]
+    public void LaunchAtLoginReadsAndWritesTheRegistryNotTheSettingsFile()
+    {
+        var keyPath = @"Software\onDeck\StartupTests\" + Guid.NewGuid().ToString("N");
+        try
+        {
+            var store = new RecordingSettingsStore();
+            var startup = new StartupManager(keyPath, @"C:\Apps\onDeck\onDeck.exe");
+            var editor = new SettingsEditor(store, startup);
+            var changes = 0;
+            editor.Changed += () => changes++;
+
+            Assert.False(editor.LaunchAtLogin);
+
+            editor.LaunchAtLogin = true;
+
+            Assert.True(editor.LaunchAtLogin);
+            Assert.True(startup.IsEnabled);
+            Assert.Equal(1, changes);
+
+            // PORT_PLAN.md scopes launch-at-login as shell-only: nothing reaches ISettingsStore.
+            Assert.Empty(store.Writes);
+
+            editor.LaunchAtLogin = false;
+
+            Assert.False(startup.IsEnabled);
+        }
+        finally
+        {
+            Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(keyPath, throwOnMissingSubKey: false);
+        }
+    }
+
+    [Fact]
+    public void LaunchAtLoginIsOffWhenThereIsNoStartupManager()
+    {
+        // Every other test constructs the editor with the store alone.
+        var editor = new SettingsEditor(new RecordingSettingsStore());
+
+        Assert.False(editor.LaunchAtLogin);
+
+        editor.LaunchAtLogin = true;      // must not throw
+
+        Assert.False(editor.LaunchAtLogin);
     }
 
     [Fact]
