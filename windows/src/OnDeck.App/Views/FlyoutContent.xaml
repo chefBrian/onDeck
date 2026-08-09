@@ -82,9 +82,13 @@
 
                         <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,0">
                             <StackPanel Orientation="Horizontal">
-                                <Grid Width="10" VerticalAlignment="Center">
+                                <!-- Swift's dot is an HStack child that only exists when shown,
+                                     so the column collapses with it - a dot-less name sits flush
+                                     with its stat line. -->
+                                <Grid x:Name="DotColumn" Width="10" VerticalAlignment="Center"
+                                      Visibility="Collapsed">
                                     <Ellipse x:Name="Dot" Width="6" Height="6"
-                                             HorizontalAlignment="Left" Visibility="Collapsed" />
+                                             HorizontalAlignment="Left" />
                                 </Grid>
                                 <!-- Foreground is explicit here, not inherited: this TextBlock
                                      sits inside a templated Button, whose own Foreground comes
@@ -96,7 +100,9 @@
                                            Foreground="{DynamicResource OnDeck.Text.Primary}" />
                             </StackPanel>
                             <StackPanel x:Name="StatRow" Orientation="Horizontal" Margin="0,1,0,0">
-                                <TextBlock Text="{Binding DelayGlyph}"
+                                <!-- Collapsed when there's no delay: an empty TextBlock still
+                                     spends its 4px margin, nudging the stat line off the name. -->
+                                <TextBlock x:Name="DelayIcon" Text="{Binding DelayGlyph}"
                                            FontFamily="{StaticResource IconFont}"
                                            FontSize="11" Margin="0,0,4,0"
                                            VerticalAlignment="Center"
@@ -109,8 +115,8 @@
 
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
 
-                            <!-- Score block: away over home, logo then runs. -->
-                            <StackPanel Margin="0,0,16,0" VerticalAlignment="Center">
+                            <!-- Score block: away over home, logo then runs. Owner-tuned gap. -->
+                            <StackPanel Margin="0,0,6,0" VerticalAlignment="Center">
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                     <Border Width="16" Height="16" ClipToBounds="True" Margin="0,0,6,0">
                                         <Image Source="{Binding AwayLogoPath}" Stretch="UniformToFill"
@@ -120,11 +126,15 @@
                                             </Image.RenderTransform>
                                         </Image>
                                     </Border>
+                                    <!-- MinWidth reserves two tabular digits so a 10+ run line
+                                         is no wider than a single-digit one - otherwise the
+                                         second digit pushes this line's logo out of column. -->
                                     <TextBlock Text="{Binding AwayScore}" FontSize="16"
                                                FontFamily="{StaticResource UiFont}"
                                                FontWeight="SemiBold" LineHeight="18"
                                                LineStackingStrategy="BlockLineHeight"
-                                               VerticalAlignment="Center"
+                                               VerticalAlignment="Center" MinWidth="20"
+                                               TextAlignment="Left"
                                                Foreground="{DynamicResource OnDeck.Text.Primary}"
                                                Typography.NumeralAlignment="Tabular" />
                                 </StackPanel>
@@ -142,7 +152,8 @@
                                                FontFamily="{StaticResource UiFont}"
                                                FontWeight="SemiBold" LineHeight="18"
                                                LineStackingStrategy="BlockLineHeight"
-                                               VerticalAlignment="Center"
+                                               VerticalAlignment="Center" MinWidth="20"
+                                               TextAlignment="Left"
                                                Foreground="{DynamicResource OnDeck.Text.Primary}"
                                                Typography.NumeralAlignment="Tabular" />
                                 </StackPanel>
@@ -151,7 +162,11 @@
                             <!-- Bases over the inning. -->
                             <StackPanel Margin="0,0,16,0" VerticalAlignment="Center">
                                 <Grid Width="38" Height="24">
+                                    <!-- Owner-tuned: 14px wide, sides' 13 tall - a hair wider
+                                         reads balanced at the top spot (15x15 and 14x14 were
+                                         both too much). -->
                                     <Polygon x:Name="SecondBase" Style="{StaticResource BaseDiamond}"
+                                             Points="7,0 14,6.5 7,13 0,6.5"
                                              Margin="0,-11,0,0" />
                                     <Polygon x:Name="ThirdBase" Style="{StaticResource BaseDiamond}"
                                              Margin="-23,7,0,0" />
@@ -208,19 +223,22 @@
                 <DataTrigger Binding="{Binding StatLine}" Value="{x:Null}">
                     <Setter TargetName="StatRow" Property="Visibility" Value="Collapsed" />
                 </DataTrigger>
+                <DataTrigger Binding="{Binding DelayGlyph}" Value="{x:Null}">
+                    <Setter TargetName="DelayIcon" Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
                 <DataTrigger Binding="{Binding Dot}" Value="Filled">
-                    <Setter TargetName="Dot" Property="Visibility" Value="Visible" />
+                    <Setter TargetName="DotColumn" Property="Visibility" Value="Visible" />
                     <Setter TargetName="Dot" Property="Fill"
                             Value="{DynamicResource OnDeck.Accent.Green}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Dot}" Value="Outlined">
-                    <Setter TargetName="Dot" Property="Visibility" Value="Visible" />
+                    <Setter TargetName="DotColumn" Property="Visibility" Value="Visible" />
                     <Setter TargetName="Dot" Property="Stroke"
                             Value="{DynamicResource OnDeck.Accent.Green}" />
                     <Setter TargetName="Dot" Property="StrokeThickness" Value="1.5" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Dot}" Value="Warning">
-                    <Setter TargetName="Dot" Property="Visibility" Value="Visible" />
+                    <Setter TargetName="DotColumn" Property="Visibility" Value="Visible" />
                     <Setter TargetName="Dot" Property="Stroke"
                             Value="{DynamicResource OnDeck.Accent.Orange}" />
                     <Setter TargetName="Dot" Property="StrokeThickness" Value="1.5" />
@@ -314,7 +332,8 @@
                            TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding DelayGlyph}" FontFamily="{StaticResource IconFont}"
+                    <TextBlock x:Name="UpcomingDelayIcon" Text="{Binding DelayGlyph}"
+                               FontFamily="{StaticResource IconFont}"
                                FontSize="10" Margin="0,0,4,0"
                                Foreground="{DynamicResource OnDeck.Accent.Blue}" />
                     <TextBlock Text="{Binding TrailingText}" FontSize="10"
@@ -330,6 +349,9 @@
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Badge}" Value="Order">
                     <Setter TargetName="Order" Property="Visibility" Value="Visible" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding DelayGlyph}" Value="{x:Null}">
+                    <Setter TargetName="UpcomingDelayIcon" Property="Visibility" Value="Collapsed" />
                 </DataTrigger>
             </DataTemplate.Triggers>
         </DataTemplate>
