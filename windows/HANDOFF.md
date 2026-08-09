@@ -250,11 +250,16 @@ a persisted frame. **XAML holds no logic**: templates bind plain record properti
 not a single `IValueConverter` in the shell. 597 tests green. Plan:
 `plans/2026-08-08-phase-7b-flyout-content.md`.
 
-**Open, cosmetic:** the flyout backdrop renders opaque instead of acrylic. Untouched by 7b — the
-HRESULT is still `0x00000000` on build 26200. Full write-up, everything already tried, and a
-warning about the unreliable screen-capture verification method:
-**`windows/ACRYLIC-OPEN-ISSUE.md`**. Read it before touching the backdrop — one plausible-looking
-fix (removing `ThemeMode="System"`) was tried, wrongly believed to work, and reverted.
+**Open, cosmetic, now two sessions deep:** the backdrop renders opaque instead of acrylic.
+**`windows/ACRYLIC-OPEN-ISSUE.md` was rewritten at the end of 7b** because its central premise was
+wrong: instrumentation proved DWM *accepts* the backdrop (`S_OK`) and WPF's composition target is
+*already* transparent — so every remedy aimed at "make DWM accept it" was aimed at the wrong layer.
+Five more fixes were tried in 7b and all failed; they are listed there so nobody repeats them.
+
+The live clue: **pressing the footer Refresh makes the flyout translucent**, and the floating panel
+— whose refresh button is the only one without a spinner animation — never becomes translucent.
+That points at an active WPF `Storyboard` changing the presentation path, which is the first thing
+to test next. Read that document before touching the backdrop.
 
 **Manual verification results, 2026-08-08** (Windows 11 build 26200, single monitor, bottom
 taskbar). Phase 7a rows kept; 7b rows appended:
@@ -267,24 +272,26 @@ taskbar). Phase 7a rows kept; 7b rows appended:
 | Acrylic backdrop | **Fail** — see `ACRYLIC-OPEN-ISSUE.md` |
 | Second monitor | **Not testable** — no second display on this machine. The code fix is in but unverified |
 | Display scaling 100/125/150/200%; docked taskbar edges; Quit from the menu | **Not run** |
-| **7b:** flyout window builds, renders and shows without throwing | **Pass** — new `[Flyout]` line in `shell.log`, process survives, single instance |
-| **7b:** everything visual (rows, dividers, dots, bases, logos, footer, panel) | **Not yet confirmed by eye** — see the note below |
+| **7b:** flyout renders the real sections against a live roster | **Pass** — ACTIVE NOW / IN GAME / UPCOMING / DONE, stat lines, score + logos, bases, count, outs, footer |
+| **7b:** base diamond turns green when the row's own player is the runner | **Pass** — seen on a live game |
+| **7b:** type matches `MenuBarView.swift` (name 13 Medium, captions 10, bases 14pt) | **Pass** after the Segoe UI Variable fix |
+| **7b:** name / scores / count render light on the dark surface | **Pass** after the `RowButton` `Foreground` fix |
+| **7b:** flyout grows to the monitor rather than scrolling at a fixed height | **Pass** |
+| **7b:** acrylic backdrop | **Fail, unresolved** — opaque until Refresh is pressed, then translucent; the panel is always opaque. See `ACRYLIC-OPEN-ISSUE.md` |
+| **7b:** floating panel opens, drags, persists its frame, auto-opens | **Not run** |
 
-**The 7b visual checks are outstanding**, and there is a reason they could not be self-served:
-there is no `%APPDATA%\onDeck\settings.json` on this machine yet, so the app comes up in the
-"Set roster URL in Settings" empty state and no live/upcoming/done rows exist to look at. Settings
-is Phase 8, so until then the only way to point it at a roster is to hand-write that file:
+**To point the app at a roster before Phase 8 exists**, hand-write
+`%APPDATA%\onDeck\settings.json` — there is no Settings UI yet:
 
 ```json
-{ "rosterUrl": "https://www.fantrax.com/fantasy/league/<leagueId>/team/roster", "hideBenchPlayers": false }
+{ "rosterUrl": "https://www.fantrax.com/fantasy/league/<leagueId>/home",
+  "selectedTeamId": "<teamId>", "hideBenchPlayers": false }
 ```
 
-**One decision may fall out of that check.** The palette resolves text colour from
-`AppsUseLightTheme`, but the backdrop bug means the flyout surface may be an opaque grey regardless
-of theme. If light mode shows dark text on a dark surface, the fix is one line — set
-`Root.Background` from `ThemePalette` — but that is a change to the backdrop path, so it is
-deliberately **not** applied unilaterally. Raise it, then record the outcome in
-`ACRYLIC-OPEN-ISSUE.md`.
+A league `/home` URL carries no teamId, so `selectedTeamId` is required. Enumerate the league's
+teams the way `FetchTeamsAsync` does — POST `getStandings` to
+`https://www.fantrax.com/fxpa/req?leagueId=<leagueId>` and collect every `{teamId, content}` pair.
+**Send a User-Agent** or it 403s (§7b).
 
 ## 9. Next up — Phase 8: the Settings window
 

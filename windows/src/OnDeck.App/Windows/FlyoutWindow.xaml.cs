@@ -48,44 +48,28 @@ public partial class FlyoutWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
-        ApplyBackdrop("init");
-
-        // A resize is the one thing observed to make the backdrop appear (hitting Refresh changes
-        // the row count, which resizes the window). Re-assert on every resize so we find out
-        // whether the resize or the repaint is the active ingredient.
-        SizeChanged += (_, _) => ApplyBackdrop("resize");
+        ApplyBackdrop();
     }
 
     /// <summary>
-    /// Clears WPF's own opaque render surface and asks DWM for the acrylic backdrop.
-    /// <para>
-    /// Called on every open, not just at init, and that repetition is the fix rather than
-    /// belt-and-braces. <c>CompositionTarget.BackgroundColor</c> is a property of the composition
-    /// target, and <c>SizeToContent</c> makes the window resize right after
-    /// <c>OnSourceInitialized</c> — the target is rebuilt and comes back **opaque**, painting over
-    /// a backdrop DWM had already accepted. That is why the attribute always returned
-    /// <c>S_OK</c> while the flyout looked solid, and why re-rendering (hitting Refresh) made it
-    /// translucent. See <c>windows/ACRYLIC-OPEN-ISSUE.md</c>.
-    /// </para>
+    /// Asks DWM for rounded corners and the acrylic backdrop, and stops WPF's own surface
+    /// painting over it. Both calls return <c>S_OK</c> and the corners visibly work; the acrylic
+    /// does not appear until something repaints the window. Unresolved — read
+    /// <c>windows/ACRYLIC-OPEN-ISSUE.md</c> before changing anything here, it records five fixes
+    /// that were tried and failed.
     /// </summary>
-    private void ApplyBackdrop(string phase)
+    private void ApplyBackdrop()
     {
         if (PresentationSource.FromVisual(this) is not HwndSource source) return;
 
-        var before = source.CompositionTarget.BackgroundColor;
         source.CompositionTarget.BackgroundColor = Colors.Transparent;
 
         var corners = DwmBackdrop.RoundCorners(source.Handle);
         var acrylic = DwmBackdrop.ApplyAcrylic(source.Handle);
 
-        // Setting the colour only affects the *next* render pass. Without forcing one, the
-        // surface keeps the opaque pixels from the paint that already happened - which is the
-        // difference between this and hitting Refresh, whose content change repaints anyway.
-        Root.InvalidateVisual();
-
         ShellLog.Append(
-            $"[Flyout/{phase}] bgWas={before} size={ActualWidth:F0}x{ActualHeight:F0} "
-            + $"visible={IsVisible} hr=0x{acrylic:X8} corners=0x{corners:X8}");
+            $"[Flyout] backdrop hresult=0x{acrylic:X8} corners=0x{corners:X8} "
+            + $"os={Environment.OSVersion.Version}");
 
         if (acrylic != 0)
         {
@@ -123,10 +107,6 @@ public partial class FlyoutWindow : Window
 
         Left = placement.X;
         Top = placement.Y;
-
-        // After the resize above, not before: the composition target has just been rebuilt and
-        // has reverted to an opaque background.
-        ApplyBackdrop("show");
 
         Activate();
     }

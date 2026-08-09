@@ -63,8 +63,7 @@ public partial class FloatingPanelWindow : Window
         var style = GetWindowLong(source.Handle, GwlExStyle);
         SetWindowLong(source.Handle, GwlExStyle, style | WsExNoActivate);
 
-        ApplyBackdrop("init");
-        SizeChanged += (_, _) => ApplyBackdrop("resize");
+        ApplyBackdrop();
     }
 
     /// <summary>
@@ -72,21 +71,16 @@ public partial class FloatingPanelWindow : Window
     /// <c>SizeToContent</c> rebuilds the composition target, which comes back opaque and paints
     /// over a backdrop DWM already accepted. See <c>windows/ACRYLIC-OPEN-ISSUE.md</c>.
     /// </summary>
-    private void ApplyBackdrop(string phase)
+    private void ApplyBackdrop()
     {
         if (PresentationSource.FromVisual(this) is not HwndSource source) return;
 
-        var before = source.CompositionTarget.BackgroundColor;
         source.CompositionTarget.BackgroundColor = Colors.Transparent;
 
         DwmBackdrop.RoundCorners(source.Handle);
         var acrylic = DwmBackdrop.ApplyAcrylic(source.Handle);
 
-        Root.InvalidateVisual();
-
-        ShellLog.Append(
-            $"[Panel/{phase}] bgWas={before} size={ActualWidth:F0}x{ActualHeight:F0} "
-            + $"visible={IsVisible} hr=0x{acrylic:X8}");
+        ShellLog.Append($"[Panel] backdrop hresult=0x{acrylic:X8}");
 
         if (acrylic != 0)
         {
@@ -105,8 +99,6 @@ public partial class FloatingPanelWindow : Window
         Render();
         RestoreFrame();
         Show();
-        UpdateLayout();
-        ApplyBackdrop("show");
     }
 
     private void Render()
