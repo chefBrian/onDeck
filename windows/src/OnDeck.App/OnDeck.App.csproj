@@ -4,6 +4,12 @@
     <ProjectReference Include="..\OnDeck.Core\OnDeck.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Resource Include="Assets\tray-white.ico" />
+    <Resource Include="Assets\tray-dark.ico" />
+    <Resource Include="Assets\tray-green.ico" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
