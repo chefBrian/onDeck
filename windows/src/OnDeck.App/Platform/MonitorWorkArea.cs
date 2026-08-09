@@ -74,4 +74,36 @@ public static class MonitorWorkArea
         var bottomRight = target.TransformFromDevice.Transform(devicePixels.BottomRight);
         return new Rect(topLeft, bottomRight);
     }
+
+    private delegate bool MonitorEnumProc(IntPtr monitor, IntPtr dc, ref NativeRect rect, IntPtr data);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EnumDisplayMonitors(
+        IntPtr dc, IntPtr clip, MonitorEnumProc callback, IntPtr data);
+
+    /// <summary>Every connected monitor's work area, in device pixels.</summary>
+    public static IReadOnlyList<Rect> AllWorkAreas()
+    {
+        var areas = new List<Rect>();
+
+        EnumDisplayMonitors(
+            IntPtr.Zero,
+            IntPtr.Zero,
+            (IntPtr monitor, IntPtr _, ref NativeRect _, IntPtr _) =>
+            {
+                var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+                if (GetMonitorInfo(monitor, ref info))
+                {
+                    var work = info.WorkArea;
+                    areas.Add(new Rect(
+                        work.Left, work.Top, work.Right - work.Left, work.Bottom - work.Top));
+                }
+
+                return true;
+            },
+            IntPtr.Zero);
+
+        return areas;
+    }
 }

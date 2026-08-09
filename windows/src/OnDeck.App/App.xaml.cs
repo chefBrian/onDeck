@@ -18,6 +18,7 @@ public partial class App : Application
     private TrayIconService? _tray;
     private ThemeWatcher? _theme;
     private FlyoutWindow? _flyout;
+    private FloatingPanelWindow? _panel;
     private TeamLogoStore? _logos;
     private AppOrchestrator? _orchestrator;
 
@@ -65,7 +66,16 @@ public partial class App : Application
         _tray.RefreshRequested += () => _ = _orchestrator.ResyncRosterAsync();
         _tray.QuitRequested += Shutdown;
 
+        // The flyout is constructed first so the panel's OpenChanged handler closes over a
+        // non-null _flyout: IsVisibleChanged can fire during the Toggle() two lines below.
         _flyout = new FlyoutWindow(_orchestrator, _logos);
+        _flyout.FloatRequested += ToggleFloat;
+        _tray.FloatRequested += ToggleFloat;
+
+        _panel = new FloatingPanelWindow(_orchestrator, _logos, settings);
+        _panel.OpenChanged += () => _flyout.SetFloating(_panel.IsOpen);
+
+        if (settings.AlwaysOpenPopout) _panel.Toggle();
 
         _ = _orchestrator.StartAsync();
     }
@@ -89,8 +99,15 @@ public partial class App : Application
         _flyout.ShowAt(anchorDevicePixels);
     }
 
+    private void ToggleFloat()
+    {
+        _flyout?.Hide();
+        _panel?.Toggle();
+    }
+
     protected override void OnExit(ExitEventArgs e)
     {
+        _panel?.Close();
         _tray?.Dispose();
         _theme?.Dispose();
         _singleInstance?.Dispose();
