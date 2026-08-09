@@ -1,11 +1,12 @@
 # onDeck Windows Port — Handoff
 
-**As of:** 2026-08-08, end of Phase 6. Branch: `main`.
+**As of:** 2026-08-08, end of Phase 7b. Branch: `main`.
 
-**State:** `OnDeck.Core` is **complete** and the shell **runs** — tray icon, light-dismissing
-flyout, context menu, settings on disk, all driven by the real engine. 522 tests green (500 Core +
-22 App), working tree clean, single-file publish verified. The toast spike passed, so Phase 9's
-stack is settled. Phase 7 is the flyout's real content.
+**State:** `OnDeck.Core` is **complete** and the shell has its **real UI** — tray icon, flyout with
+the four player sections and footer, floating panel with a persisted frame, settings on disk, all
+driven by the real engine. 597 tests green (508 Core + 89 App), working tree clean, single-file
+publish verified. The toast spike passed, so Phase 9's stack is settled. Phase 8 is the Settings
+window.
 
 ---
 
@@ -83,17 +84,34 @@ windows/
 │   │                         NameCleaner, FantraxUrlParser, StreamLinkRouter, HeadshotCache,
 │   │                         BaseballCalendar
 │   └── Managers/             RosterManager, ScheduleManager, StateManager, GameMonitor
-├── src/OnDeck.App/           net10.0-windows WPF — still the bare template
-└── tests/OnDeck.Core.Tests/  net10.0, xunit v2 + Microsoft.Extensions.TimeProvider.Testing
-    ├── SingleThreadedContext.cs      pumping single-threaded SynchronizationContext fixture
-    ├── RecordingNotificationSink.cs  INotificationSink double with an ordered call log
-    ├── Networking/RoutingHttpMessageHandler.cs   URL-routed HTTP double
-    └── App/OrchestratorHarness.cs    composes managers + routes + orchestrator
+├── src/OnDeck.App/           net10.0-windows WPF
+│   ├── App.xaml(.cs)         composition root; palette application; Float wiring
+│   ├── SettingsStore.cs      ISettingsStore + the shell-only FloatingPanelFrame
+│   ├── Platform/             DwmBackdrop, MonitorWorkArea, ShellLog, SingleInstance,
+│   │                         TrayGeometry, ExternalLink
+│   ├── Tray/                 TrayIconService, ThemeWatcher, TrayIconVariant
+│   ├── Views/                ThemePalette, DisplayFormatting, RowViewModels, FlyoutSections
+│   │                         (+ FlyoutInputFactory), RefreshButtonModel, TeamLogoStore,
+│   │                         FlyoutContent.xaml, FooterBar.xaml
+│   └── Windows/              FlyoutWindow, FloatingPanelWindow, FlyoutPositioner,
+│                             FloatingPanelPlacement
+├── tests/OnDeck.Core.Tests/  net10.0, xunit v2 + Microsoft.Extensions.TimeProvider.Testing
+│   ├── SingleThreadedContext.cs      pumping single-threaded SynchronizationContext fixture
+│   ├── RecordingNotificationSink.cs  INotificationSink double with an ordered call log
+│   ├── Networking/RoutingHttpMessageHandler.cs   URL-routed HTTP double
+│   └── App/OrchestratorHarness.cs    composes managers + routes + orchestrator
+└── tests/OnDeck.App.Tests/   net10.0-windows, same stack
+    └── StubHttpMessageHandler.cs     its own copy — the two test projects don't reference
+                                      each other
 ```
 
-`Microsoft.Extensions.TimeProvider.Testing` is a **test-project-only** dependency. `OnDeck.Core`
-must keep zero package references — verify with
+`Microsoft.Extensions.TimeProvider.Testing` (10.8.0, pinned the same in both test projects) is a
+**test-project-only** dependency. `OnDeck.Core` must keep zero package references — verify with
 `grep -c PackageReference windows/src/OnDeck.Core/OnDeck.Core.csproj` (expect 0).
+
+**WPF's implicit usings omit `System.IO`** (it would collide with `System.Windows.Shapes.Path`), so
+any file in `OnDeck.App` or `OnDeck.App.Tests` touching `Path`/`File`/`Directory` needs an explicit
+`using System.IO;`.
 
 ## 6. Conventions established
 
@@ -170,26 +188,45 @@ Each phase plan has its own list; the ones with ongoing consequences:
 | **Phase 6:** flyout anchors on the cursor, not `Shell_NotifyIconGetRect` | That call needs the hwnd and icon id Hardcodet keeps private. The cursor is over the icon whenever it's clicked; device pixels are converted to DIPs explicitly so scaling stays right |
 | **Phase 6:** `SettingsStore` landed here, not Phase 8 | The composition root cannot build `AppOrchestrator` without an `ISettingsStore`. Phase 8 is now purely the settings UI |
 | **Phase 6:** tray icons drop Tabler's stitch strokes at all sizes | Cluttered even at 128 px, mud at 16. Circle + seams reads as a baseball everywhere we render it |
+| **Phase 7b:** Settings footer button + tray Settings item deferred to Phase 8 | `TrayIconService`'s own doc comment sets the convention — a button ships with the window it opens. A button that does nothing is worse than one that isn't there |
+| **Phase 7b:** no `matchedGeometryEffect` row-reorder animation (`MenuBarView.swift:181`) | WPF has no equivalent primitive; rows are replaced wholesale each rebuild |
+| **Phase 7b:** colours come from an app-owned `ThemePalette`, not WPF Fluent's resource keys | A `DynamicResource` naming a key that isn't there resolves to null and renders invisible, with no error at build or run time — the same silent-failure class as the acrylic bug |
+| **Phase 7b:** palette is driven by `AppsUseLightTheme`; the tray icon still uses `SystemUsesLightTheme` | They are separate registry values, and "light apps, dark taskbar" is the Windows 11 default pairing |
+| **Phase 7b:** floating panel's close/refresh controls fall back to the empty state's header | Swift renders no header when every list is empty, leaving the panel closable only from the Float button. A borderless window with no taskbar entry needs its own close affordance |
+| **Phase 7b:** `TeamLogoStore` sits between the rows and Core's `TeamLogoCache` | Rows rebuild every 10 s during a live game; the path lookup must be synchronous and the fetch must de-duplicate, or a missing logo is re-requested on every rebuild |
+| **Phase 7b:** rows carry a logo **file path**, not an `ImageSource` | WPF's built-in converter turns a path into an image, which keeps the row records plain data and unit-testable |
+| **Phase 7b:** floating-panel frame persisted outside `ISettingsStore` (`SettingsStore.FloatingPanelFrame`) | `PORT_PLAN.md` already scopes it as shell-only; Core has no business knowing a window exists |
+| **Phase 7b:** `FloatingPanelPlacement` adds an on-screen check macOS gets for free | `setFrameUsingName` returns false for an unusable frame; Windows has no equivalent, and the panel has no taskbar button to recover it with |
+| **Phase 7b:** floating header's refresh shows a static glyph while syncing, not a spinner | Swift uses a 14 pt `ProgressView`. The tick/cross outcome still shows; a second rotation storyboard for a 12 px glyph isn't worth it. The footer's Refresh does spin |
+| **Phase 7b:** `#if DEBUG` memory overlay not ported | `MemoryStats` is macOS-only and explicitly out of scope in `PORT_PLAN.md` |
 
 `OnDeck.Core` has `<InternalsVisibleTo Include="OnDeck.Core.Tests" />` for the `internal` seams on
 `GameMonitor` (`TrackGames`, `NextEventDelay`, `SelectGamesToPoll`, `PollSingleGameAsync`,
 `ProcessFeed`), `DisplayRules` (the whole class), and `AppOrchestrator.TimeUntilNextEightAm`.
+`OnDeck.App` gained the same for `OnDeck.App.Tests` in Phase 7b, for `TeamLogoStore.DrainAsync`.
 
-## 8b. Phase 7a status (done) and the one open issue
+## 8b. Phase 7 status and the one open issue
 
-**Phase 7a is complete and committed:** the flyout now uses the work area of the monitor holding
-the tray (`Platform/MonitorWorkArea.cs`), `TeamLogoCache` is in Core beside `HeadshotCache`, and
+**Phase 7a (done):** the flyout uses the work area of the monitor holding the tray
+(`Platform/MonitorWorkArea.cs`), `TeamLogoCache` is in Core beside `HeadshotCache`, and
 `Views/DisplayFormatting.cs` holds the dot / glyph / badge / trailing-text rules from
-`MenuBarView.swift`. 543 tests green. Plan: `plans/2026-08-08-phase-7a-flyout-foundations.md`.
+`MenuBarView.swift`. Plan: `plans/2026-08-08-phase-7a-flyout-foundations.md`.
 
-**Open, cosmetic, do not let it block 7b:** the flyout backdrop renders opaque instead of acrylic.
-Full write-up, everything already tried, and a warning about the unreliable screen-capture
-verification method: **`windows/ACRYLIC-OPEN-ISSUE.md`**. Read it before touching the backdrop —
-one plausible-looking fix (removing `ThemeMode="System"`) was tried, wrongly believed to work, and
-reverted.
+**Phase 7b (done):** the real content. Five plain-class layers, each unit-tested — `ThemePalette`,
+`RowViewModels`, `FlyoutSections`, `RefreshButtonModel`, `TeamLogoStore` — under two XAML views,
+`FlyoutContent` (shared verbatim by both windows) and `FooterBar`, plus `FloatingPanelWindow` with
+a persisted frame. **XAML holds no logic**: templates bind plain record properties, and there is
+not a single `IValueConverter` in the shell. 597 tests green. Plan:
+`plans/2026-08-08-phase-7b-flyout-content.md`.
+
+**Open, cosmetic:** the flyout backdrop renders opaque instead of acrylic. Untouched by 7b — the
+HRESULT is still `0x00000000` on build 26200. Full write-up, everything already tried, and a
+warning about the unreliable screen-capture verification method:
+**`windows/ACRYLIC-OPEN-ISSUE.md`**. Read it before touching the backdrop — one plausible-looking
+fix (removing `ThemeMode="System"`) was tried, wrongly believed to work, and reverted.
 
 **Manual verification results, 2026-08-08** (Windows 11 build 26200, single monitor, bottom
-taskbar):
+taskbar). Phase 7a rows kept; 7b rows appended:
 
 | Check | Result |
 |---|---|
@@ -199,45 +236,61 @@ taskbar):
 | Acrylic backdrop | **Fail** — see `ACRYLIC-OPEN-ISSUE.md` |
 | Second monitor | **Not testable** — no second display on this machine. The code fix is in but unverified |
 | Display scaling 100/125/150/200%; docked taskbar edges; Quit from the menu | **Not run** |
+| **7b:** flyout window builds, renders and shows without throwing | **Pass** — new `[Flyout]` line in `shell.log`, process survives, single instance |
+| **7b:** everything visual (rows, dividers, dots, bases, logos, footer, panel) | **Not yet confirmed by eye** — see the note below |
 
-## 9. Next up — Phase 7b: the flyout's real content
+**The 7b visual checks are outstanding**, and there is a reason they could not be self-served:
+there is no `%APPDATA%\onDeck\settings.json` on this machine yet, so the app comes up in the
+"Set roster URL in Settings" empty state and no live/upcoming/done rows exist to look at. Settings
+is Phase 8, so until then the only way to point it at a roster is to hand-write that file:
 
-*(Windows PC. Phases 7–11 need a human at the keyboard for the manual Win11 checks.)*
+```json
+{ "rosterUrl": "https://www.fantrax.com/fantasy/league/<leagueId>/team/roster", "hideBenchPlayers": false }
+```
 
-**Spec:** `onDeck/Views/MenuBarView.swift`. The sorting and filter rules are already ported and
-tested in Core (`DisplayRules`, `AppOrchestrator`) — Phase 7 is presentation only. Every row field
-the Swift view reads is already resolved onto `PlayerDisplay`; do not recompute any of it in XAML.
-`Views/DisplayFormatting.cs` (Phase 7a) already maps those fields to dots, glyphs and badges.
+**One decision may fall out of that check.** The palette resolves text colour from
+`AppsUseLightTheme`, but the backdrop bug means the flyout surface may be an opaque grey regardless
+of theme. If light mode shows dark text on a dark surface, the fix is one line — set
+`Root.Background` from `ThemePalette` — but that is a change to the backdrop path, so it is
+deliberately **not** applied unilaterally. Raise it, then record the outcome in
+`ACRYLIC-OPEN-ISSUE.md`.
 
-**Write a 7b plan first**, per the workflow in §2. Phase 7 was split because one plan covering both
-halves would have padded the XAML half with vague instructions; 7a was the testable foundations
-and is done.
+## 9. Next up — Phase 8: the Settings window
+
+*(Windows PC. Phases 8–11 need a human at the keyboard for the manual Win11 checks.)*
+
+**Spec:** `onDeck/Views/SettingsView.swift`. Write the plan first, per the workflow in §2.
+
+Build `SettingsWindow` over the existing `SettingsStore`: roster URL field (fetch teams on submit
+via `FetchTeamsAsync`), team picker with `IsLoadingTeams` / `TeamsError` states, sync status +
+Sync Now (disabled while `IsSyncing` or with no team), display toggles (hide bench, always-open
+popout), the five notification toggles, GitHub links. Call `SettingsChanged()` after any write —
+it re-filters every section locally with no network.
+
+**Phase 7b deliberately deferred two things to this phase**, because a button that opens nothing is
+worse than one that isn't there yet:
+
+1. The **Settings footer button** in `Views/FooterBar.xaml` — first in the row, gear glyph
+   ``, matching the other `FooterButton`-styled buttons; raise a `SettingsRequested` event
+   like `FantraxRequested`.
+2. The **Settings item in the tray context menu** (`Tray/TrayIconService.cs`), between Float and
+   Refresh, mirroring the existing `FloatRequested` wiring.
 
 **Correction to `PORT_PLAN.md`:** its Phase 7 row says the row control shows a *headshot*. It does
-not — `MenuBarView.swift` renders team logos in the score block and no player headshots at all.
-`HeadshotCache` exists for notification images only. The parity-checklist line about headshots in
-the flyout and floating panel is wrong.
+not — `MenuBarView.swift` renders team logos in the score block and no player headshots at all, and
+that is what shipped. `HeadshotCache` exists for notification images only. The parity-checklist line
+about headshots in the flyout and floating panel is wrong.
 
-Build: `PlayerRow` control (headshot, name, state dot, `StatLine`), UPCOMING / IN GAME / DONE
-sections, PPD label, rain/delay icon from `PlayerDisplay.Delay` + tooltip, stream-link click →
-`Process.Start`, not-in-lineup flag (hitters only), footer buttons (Settings, Fantrax, Refresh with
-idle/spinning/done/failed off `ResyncRosterAsync`'s bool, Float, Quit). Then `FloatingPanelWindow`:
-always-on-top no-activate borderless window reusing the same section views, drag-by-background,
-frame saved to settings, toggled by Float, auto-opened at launch when `AlwaysOpenPopout`.
+### Phase 6 debts — status after Phase 7
 
-**Replace the placeholder** in `FlyoutWindow.xaml` (a one-line counts summary) with the real
-sections, and add Float + Settings to the tray context menu once their windows exist.
-
-### Phase 6 debts to clear in Phase 7
-
-1. **Multi-monitor placement is wrong.** `FlyoutWindow.ShowAt` uses `SystemParameters.WorkArea`,
-   which is always the *primary* monitor's. Use the work area of the monitor containing the anchor.
-2. **`ThemeWatcher`'s change path has never run.** Verify the tray icon swaps white↔dark when the
-   Windows colour mode changes with the app running.
-3. **Unknown whether acrylic or the solid fallback fired.** If the flyout is a flat `#202020`
-   rectangle, `DwmSetWindowAttribute` refused it on this build — record the build number.
-4. The rest of the Task 7 matrix in `plans/2026-08-08-phase-6-shell-skeleton.md`: display scaling,
-   docked taskbar edges, double-launch, Quit leaving no process.
+1. **Multi-monitor placement.** *Fixed in 7a* (`Platform/MonitorWorkArea.ForDevicePoint`), still
+   unverified — no second display on this machine.
+2. **`ThemeWatcher`'s change path.** *Verified in 7a.* 7b added `AppsUseLightTheme` alongside it,
+   which drives the flyout palette and rides the same change event.
+3. **Acrylic vs solid fallback.** *Answered:* the attribute returns `S_OK` and the surface is opaque
+   anyway, so the fallback never fires. Still open — `ACRYLIC-OPEN-ISSUE.md`.
+4. **Double-launch.** *Verified in 7b* — second launch exits 0 and one instance remains.
+5. Still not run: display scaling 100/125/150/200%, docked taskbar edges, Quit leaving no process.
 
 ### What the shell must honour when it wires up Core
 
@@ -262,10 +315,10 @@ sections, and add Float + Settings to the tray context menu once their windows e
 - `OrchestratorHarness` — declares players/games once and derives the Fantrax, MLB-search, schedule
   and cached-roster payloads from them; `Run`/`RunStarted` wrap the context and clean up.
 
-## 10. After Phase 7 — Phases 8–11
+## 10. After Phase 8 — Phases 9–11
 
-Settings window (8), Notifications (9), system integration & ship (10), parity QA (11). See
-`PORT_PLAN.md` for each phase's scope and the parity checklist.
+Notifications (9), system integration & ship (10), parity QA (11). See `PORT_PLAN.md` for each
+phase's scope and the parity checklist.
 
 **Phase 9 starts by bumping `OnDeck.App` to `net10.0-windows10.0.17763.0`** — the toast compat APIs
 are not exposed on the bare `net10.0-windows` the app targets today. The spike project already does

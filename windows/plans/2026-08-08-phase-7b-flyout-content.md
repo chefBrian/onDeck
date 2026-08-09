@@ -3183,9 +3183,19 @@ git commit -m "phase 7b: handoff notes"
 
 ---
 
+## Execution notes
+
+Corrections found while running the plan, none of them changes to the Swift port:
+
+| Plan said | Reality |
+|---|---|
+| `Microsoft.Extensions.TimeProvider.Testing` 9.0.0 | `OnDeck.Core.Tests` pins **10.8.0**; matched it, as the step instructed |
+| `<DataTemplate.Triggers>` nested inside the template's root `Button` | `MC3015` — it must be a **direct child of `DataTemplate`**, a sibling of the root element. Moved |
+| Test files inherit `System.IO` | WPF's implicit usings **omit** `System.IO` (it would collide with `System.Windows.Shapes.Path`), so `TeamLogoStoreTests` imports it explicitly, as `SettingsStore.cs` already does |
+
 ## Deviations
 
-Fill in during execution; these are the ones known at planning time.
+These are divergences from the Swift original. All the ones anticipated at planning time held.
 
 | Deviation | Why |
 |---|---|
