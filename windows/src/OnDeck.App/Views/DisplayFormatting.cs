@@ -27,10 +27,13 @@ public enum LineupBadge
 /// </summary>
 public static class DisplayFormatting
 {
-    // Segoe Fluent Icons: rain showers (day), clock with alert, blocked.
-    private const string RainGlyph = "";
-    private const string DelayedGlyph = "";
-    private const string PostponedGlyph = "";
+    // Segoe Fluent Icons: Cloud, Recent, StatusErrorFull - the closest stand-ins for the Mac's
+    // cloud.rain.fill / clock.badge.exclamationmark.fill / xmark.octagon.fill (neither Segoe
+    // icon font has any rain glyph). Escape sequences, not literals, as in FooterBar; all three
+    // codepoints exist in Segoe MDL2 Assets too, which the tests enforce.
+    private const string RainGlyph = "\uE753";
+    private const string DelayedGlyph = "\uE823";
+    private const string PostponedGlyph = "\uEB90";
 
     public static ProximityDot Dot(PlayerDisplay display) => display.Proximity?.Kind switch
     {

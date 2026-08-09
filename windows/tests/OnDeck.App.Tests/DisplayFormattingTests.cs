@@ -1,3 +1,5 @@
+using System.Windows;
+using System.Windows.Media;
 using OnDeck.App.Views;
 using OnDeck.Core.Models;
 
@@ -66,6 +68,48 @@ public class DisplayFormattingTests
 
         Assert.NotNull(glyph);
         Assert.NotEmpty(glyph);
+    }
+
+    // Mirrors the IconFont fallback chain in FlyoutContent.xaml, whose comment promises that
+    // MDL2 (the Win10 fallback) carries the same codepoints - so every installed family in the
+    // chain must cover every glyph. The family-name check skips silent fallback resolutions on
+    // machines missing a family, rather than asserting PUA glyphs against the default font.
+    private static readonly string[] IconFontChain = ["Segoe Fluent Icons", "Segoe MDL2 Assets"];
+
+    private static IEnumerable<(string Family, GlyphTypeface Glyphs)> InstalledIconFonts()
+    {
+        foreach (var family in IconFontChain)
+        {
+            var typeface = new Typeface(new FontFamily(family), FontStyles.Normal,
+                FontWeights.Normal, FontStretches.Normal);
+            if (typeface.TryGetGlyphTypeface(out var glyphs)
+                && glyphs.FamilyNames.Values.Contains(family))
+            {
+                yield return (family, glyphs);
+            }
+        }
+    }
+
+    // Guards against codepoints the icon fonts don't carry: U+E9C4 shipped as the rain glyph
+    // once and neither Segoe font has it, so rain-delay rows rendered a .notdef box.
+    [Theory]
+    [InlineData(DelayIndicator.Rain)]
+    [InlineData(DelayIndicator.Delayed)]
+    [InlineData(DelayIndicator.Postponed)]
+    public void DelayGlyph_ResolvesInEveryFontOfTheIconChain(DelayIndicator delay)
+    {
+        var glyph = DisplayFormatting.DelayGlyph(delay);
+
+        Assert.NotNull(glyph);
+        Assert.NotEmpty(InstalledIconFonts());
+        foreach (var (family, glyphs) in InstalledIconFonts())
+        {
+            foreach (var codepoint in glyph)
+            {
+                Assert.True(glyphs.CharacterToGlyphMap.ContainsKey(codepoint),
+                    $"U+{(int)codepoint:X4} for {delay} is not in '{family}'");
+            }
+        }
     }
 
     [Fact]
