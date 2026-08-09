@@ -59,12 +59,14 @@ public partial class FlyoutWindow : Window
         ApplyBackdrop();
     }
 
+    /// <summary>Re-tints the acrylic after a live theme change. The app calls this from
+    /// <c>ApplyPalette</c>, after the palette has republished the tint resource.</summary>
+    public void RefreshBackdrop() => ApplyBackdrop();
+
     /// <summary>
-    /// Asks DWM for rounded corners and the acrylic backdrop, and stops WPF's own surface
-    /// painting over it. Both calls return <c>S_OK</c> and the corners visibly work; the acrylic
-    /// does not appear until something repaints the window. Unresolved — read
-    /// <c>windows/ACRYLIC-OPEN-ISSUE.md</c> before changing anything here, it records five fixes
-    /// that were tried and failed.
+    /// Rounds the corners, stops WPF's own surface painting over the compositor, and asks for
+    /// acrylic via the accent policy — the tint rides the palette so it follows the theme. See
+    /// <c>windows/ACRYLIC-OPEN-ISSUE.md</c> for why this is not <c>DWMWA_SYSTEMBACKDROP_TYPE</c>.
     /// </summary>
     private void ApplyBackdrop()
     {
@@ -73,19 +75,23 @@ public partial class FlyoutWindow : Window
         source.CompositionTarget.BackgroundColor = Colors.Transparent;
 
         var corners = DwmBackdrop.RoundCorners(source.Handle);
-        var acrylic = DwmBackdrop.ApplyAcrylic(source.Handle);
+        var acrylic = DwmBackdrop.ApplyAcrylic(source.Handle, BackdropTint());
 
         ShellLog.Append(
-            $"[Flyout] backdrop hresult=0x{acrylic:X8} corners=0x{corners:X8} "
+            $"[Flyout] backdrop accent error={acrylic} corners=0x{corners:X8} "
             + $"os={Environment.OSVersion.Version}");
 
-        if (acrylic != 0)
-        {
-            // Older Win11 builds refuse the backdrop attribute - paint something opaque so the
-            // flyout is never an unreadable transparent rectangle.
-            Root.Background = new SolidColorBrush(Color.FromRgb(0x20, 0x20, 0x20));
-        }
+        // Blur composited: lay the translucent veil over it. Blur refused: opaque surface, so
+        // the flyout is never an unreadable transparent rectangle.
+        Root.SetResourceReference(
+            System.Windows.Controls.Border.BackgroundProperty,
+            acrylic == 0 ? ThemePalette.BackdropVeil : ThemePalette.Surface);
     }
+
+    private static uint BackdropTint() =>
+        Application.Current?.Resources[ThemePalette.BackdropTint] is uint tint
+            ? tint
+            : 0x0D202020;
 
     /// <summary>
     /// Opens the flyout anchored at <paramref name="anchorDevicePixels"/> — the cursor, which is

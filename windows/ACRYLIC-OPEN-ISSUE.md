@@ -1,112 +1,78 @@
-# Open issue: the flyout backdrop is opaque, not acrylic
+# Resolved: the flyout backdrop is acrylic again
 
-**Status: UNRESOLVED**, after two sessions. Cosmetic only — both windows are fully usable.
-Rewritten 2026-08-08 at the end of Phase 7b, because the original write-up's central premise
-turned out to be **false** and was sending people down the wrong path.
+**Status: RESOLVED, 2026-08-09**, after three sessions. Both the flyout and the floating panel
+now show live acrylic, from open, active or not. This file keeps the investigation because the
+root cause is a machine/OS behaviour that could plausibly regress or recur in another form.
 
-## Symptom, precisely
+## Root cause
 
-- **Flyout:** opaque on open. Hitting the footer **Refresh** makes it turn translucent, and it
-  stays translucent. Confirmed by the repo owner, with a screenshot showing text from the window
-  behind bleeding through the top of the flyout.
-- **Floating panel:** opaque **always**. Refresh never helps it.
-- Rounded corners work on both, always.
+**`DWMWA_SYSTEMBACKDROP_TYPE` backdrops composite as their solid fallback colour for every
+window of every app on this machine** (Windows 11 25H2, build 26200.8973) — while DWM still
+composites the *accent-policy* blur (`SetWindowCompositionAttribute`, the Win10-era API) and the
+system's own surfaces (taskbar) live. The app's DWM calls were always correct; the OS declined
+to run the material.
 
-The Refresh reproduction is the single most valuable clue in this document. Whatever is wrong, the
-mechanism *does* work on this machine — something at open time prevents it, and a content change
-after the fact fixes it.
+Proved on 2026-08-09 by poking the live windows from outside the process and screenshotting
+against a lime-green and a checkerboard backdrop window:
 
-## The premise that was wrong
+- `DwmGetWindowAttribute` confirmed acrylic (3) applied, `S_OK` — composited as uniform
+  `#545454` with **zero** bleed of the lime green behind it. Setting Mica (2) from outside
+  changed the solid to `#202020`: the visible pixels *were* the backdrop material, in fallback.
+- Not activation-gated: a foreground flyout was identical to a never-activated one.
+- Not window-shape-gated: a minimal WinForms control window showed the same fallback with
+  `FormBorderStyle` None *and* Sizable, in a fresh process.
+- Not the global toggle: transparency effects were ON (`EnableTransparency=1`), desktop PC,
+  console session (not RDP).
+- The same control window with `WCA_ACCENT_POLICY` / `ACCENT_ENABLE_ACRYLICBLURBEHIND`
+  rendered live translucency immediately.
 
-The first write-up assumed the backdrop was **not being applied**, and every remedy it lists is
-aimed at getting DWM to accept it. Phase 7b instrumented the actual call site and disproved that:
+## Why the old symptoms looked the way they did
 
-```
-[Flyout/init] bgWas=#00FFFFFF size=300x782 visible=True hr=0x00000000 corners=0x00000000
-[Flyout/show] bgWas=#00FFFFFF size=300x782 visible=True hr=0x00000000 corners=0x00000000
-```
+- **"Opaque on open, Refresh makes it translucent" (Phase 7b)** — on 2026-08-08 the machine
+  still ran DWMSBT acrylic live at least some of the time; whatever kicked it (the storyboard
+  was the best guess) stopped mattering when the OS stopped compositing the material at all.
+  By 2026-08-09 Refresh did nothing, which is what exposed the machine-level cause.
+- **The floating panel was always opaque** — consistent with (but not caused by) its
+  `WS_EX_NOACTIVATE` style; the accent path composites for inactive windows, DWMSBT's policy
+  engine treats them worse.
+- Every earlier fix attempt targeted the app's calls. Nothing an app calls differently makes
+  DWM run a backdrop it has decided to fall back.
 
-So at both init and show, **before** anything is re-applied:
+## The fix
 
-- `DWMWA_SYSTEMBACKDROP_TYPE` = `DWMSBT_TRANSIENTWINDOW` → **`S_OK`**
-- `DWMWA_WINDOW_CORNER_PREFERENCE` → **`S_OK`**, and visibly works
-- `HwndSource.CompositionTarget.BackgroundColor` is **already `#00FFFFFF`** — fully transparent,
-  not reverting to opaque as was suspected
-- `DwmExtendFrameIntoClientArea(-1,-1,-1,-1)` is already being called inside `ApplyAcrylic`
+`DwmBackdrop.ApplyAcrylic` now sets the accent policy
+(`SetWindowCompositionAttribute`, `WCA_ACCENT_POLICY`, state `ACCENT_ENABLE_BLURBEHIND`,
+flags 0) instead of `DWMWA_SYSTEMBACKDROP_TYPE`. Plain blur, not the acrylic material
+(state 4): acrylic lays its own dark saturating base over the blur, and that base swallowed
+every tint change — 70%, 30% and 20% alpha all read as near-opaque to the owner. The tint is
+`ThemePalette.BackdropTintAbgr` — the theme's `Surface` colour at **5% alpha, a whisper** —
+in the accent policy's ABGR byte order, published through the palette's resource dictionary so
+`App.ApplyPalette` can re-tint both windows on a live theme change via `RefreshBackdrop()`.
+The darkening the owner wanted comes from an **app-side veil**: the root `Border` carries
+`ThemePalette.BackdropVeil` (`Surface` at ~55% alpha, owner-tuned) over the blur — the acrylic look with the
+veil's weight under our control, which the OS acrylic material never allowed (its baked-in base
+swallowed every tint change between 70% and 20%). `CompositionTarget.BackgroundColor =
+Transparent` is still required, and rounded corners still come from
+`DWMWA_WINDOW_CORNER_PREFERENCE`. On accent failure the root `Border` falls back to the theme's
+opaque `Surface` brush.
 
-**DWM accepts the backdrop and WPF's surface is already transparent, and it still renders opaque.**
-A zero HRESULT is not evidence the backdrop is visible. Don't treat it as one.
+Notes for whoever touches this next:
 
-## Tried and failed
+- The accent API is undocumented but has been stable since Win10 1803 and is what the major
+  WPF acrylic libraries ship. If a future Windows build breaks it, the solid fallback path
+  already handles the failure code.
+- WPF's Fluent theme (`ThemeMode="System"`) sets Mica (`DWMSBT_MAINWINDOW`) on windows by
+  itself — `DwmGetWindowAttribute(38)` reading 2 on these windows is WPF's doing, harmless
+  here because the accent wins visually, and it costs nothing while DWMSBT is fallback-only
+  on this machine.
+- Historical accent caveat: dragging a window with the acrylic state (4) lagged on some Win10
+  builds; the plain-blur state (3) in use here never had that problem. If a future build
+  renders state 3 as unfrosted glass (another historical quirk), state 4 with a low-alpha tint
+  is the fallback — accepting its heavier base material.
 
-From the first session:
+## A warning about verification method (kept from the original)
 
-1. `DwmExtendFrameIntoClientArea` with `-1` margins before setting the attribute. *(Still in the
-   code — it is a prerequisite, not a fix.)*
-2. `HwndSource.CompositionTarget.BackgroundColor = Colors.Transparent`. *(Still in the code. The
-   instrumentation shows it was already transparent anyway.)*
-3. `Background="Transparent"` on the `Window` with no background on the inner `Border`.
-4. Re-applying the backdrop at `DispatcherPriority.Loaded`.
-5. **Removing `ThemeMode="System"` from `App.xaml`.** Briefly believed to be the fix; it was not.
-   The "evidence" was a pixel sample whose coordinates had drifted onto the red test window.
-   **Do not remove it again on the strength of that claim.**
-
-Added in Phase 7b — all five failed, all now reverted so the code doesn't carry dead speculation:
-
-6. Re-applying `BackgroundColor` + both DWM attributes after `Show()` and `UpdateLayout()`, on the
-   theory that `SizeToContent` rebuilds the composition target and it returns opaque. Disproved by
-   the log above: it was never opaque.
-7. `Root.InvalidateVisual()` to force a repaint after setting the attributes.
-8. Re-applying on every `SizeChanged`.
-9. `SetWindowPos(..., SWP_FRAMECHANGED)` after setting the attributes — the OS-level equivalent of
-   the resize that Refresh causes. This was the best-reasoned attempt and still did nothing.
-10. Setting `WS_EX_NOACTIVATE` on the panel **before** the backdrop instead of after, in case the
-    ex-style change dropped the DWM attributes. *(Kept — it is more correct regardless — but it
-    did not make the panel translucent.)*
-
-## The strongest untested lead
-
-**What does the footer Refresh do that a repaint, a resize and a frame change do not?**
-
-It runs a **`Storyboard`** — the spinner rotation on the Refresh glyph. An active WPF animation
-puts the render thread into continuous presentation, which is a different presentation path from a
-static window's one-shot paint.
-
-The floating panel corroborates this. Its refresh button is the *header* one, which Phase 7b
-deliberately built **without** a spinner (see the Deviations table in
-`plans/2026-08-08-phase-7b-flyout-content.md`) — and the panel is exactly the window where Refresh
-never helps. Same content change, same resize, no animation, no translucency.
-
-**Test it cheaply first:** give the floating panel's header refresh a spinner storyboard, or
-attach any always-running animation to the flyout, and see whether the backdrop appears. If it does,
-the fix is to keep a trivial always-running animation alive (or find whichever WPF presentation
-mode it selects and select it directly).
-
-Also still untested from the original write-up:
-
-- `WindowChrome` with a non-zero `GlassFrameThickness` instead of `WindowStyle="None"` — a
-  frameless window is a plausible reason DWM has nothing to composite into.
-- `DWMSBT_MAINWINDOW` (2, Mica) to establish whether *any* backdrop type composites at all, which
-  separates "this window can't have a backdrop" from "acrylic specifically is refused".
-- A minimal WPF window with no tray icon, no `Topmost`, no `ShowInTaskbar="False"`, to rule out
-  interactions between those.
-
-## A warning about verification method
-
-`Graphics.CopyFromScreen` (BitBlt) was used to sample the flyout automatically in the first
-session. **It is not trustworthy here** and cost several wrong conclusions: hard-coded capture
-coordinates silently drift when the flyout moves, so samples land on whatever is behind it.
-
-If you automate this again: get the window rectangle from the OS (`GetWindowRect` on the hwnd),
-**save the PNG and actually look at it**, and only then sample pixels inside it. Better still, ask
-the repo owner — that is how the Refresh clue was found in the first place.
-
-## If the next attempt also fails
-
-Stop, and make the solid surface deliberate: pick a colour matching Win11 flyouts, set it
-unconditionally, delete the acrylic path, and update `PORT_PLAN.md`'s tech-stack note. The master
-plan always allowed the solid-colour fallback ("Acrylic degrades to a solid brush where DWM
-refuses it"). Three sessions of chasing a cosmetic effect is more than it is worth.
-
-Note that the current behaviour — opaque until you hit Refresh, then translucent — is *worse* than
-a consistent solid surface, so this fallback is a real improvement, not a concession.
+`Graphics.CopyFromScreen` with hard-coded coordinates produced confidently wrong conclusions in
+the first session. If you automate this again: take the rectangle from `GetWindowRect` on the
+hwnd, **save the PNG and actually look at it**, and put a known bright pattern *behind* the
+window — a uniform solid cannot distinguish heavy blur from opaque.

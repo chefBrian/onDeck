@@ -27,16 +27,49 @@ public sealed record ThemePalette
     public const string Surface = "OnDeck.Surface";
     public const string SurfaceCard = "OnDeck.Surface.Card";
 
+    /// <summary>Resource key for <see cref="BackdropTintAbgr"/> — a boxed <c>uint</c>, not a brush.</summary>
+    public const string BackdropTint = "OnDeck.Backdrop.Tint";
+
+    /// <summary>
+    /// The app-side darkening over the accent blur: <see cref="Surface"/> at ~55%, owner-tuned.
+    /// This is the dial for how heavy the flyout's veil reads — the OS acrylic material bakes
+    /// its own veil in, which is why we blur with the plain accent state and veil here instead.
+    /// </summary>
+    public const string BackdropVeil = "OnDeck.Backdrop.Veil";
+
     public static IReadOnlyList<string> Keys { get; } =
     [
         TextPrimary, TextSecondary, Divider, RowHover,
         Green, Orange, Red, Blue, BaseOccupied, BaseEmpty,
-        Surface, SurfaceCard,
+        Surface, SurfaceCard, BackdropVeil,
     ];
+
+    /// <summary>
+    /// ~5% alpha — a whisper, owner-tuned. The window's darkening comes from the blur itself;
+    /// most builds ignore the gradient colour entirely for the plain-blur accent state.
+    /// </summary>
+    private const byte BackdropAlpha = 0x0D;
 
     private ThemePalette(IReadOnlyDictionary<string, Color> colors) => Colors = colors;
 
     public IReadOnlyDictionary<string, Color> Colors { get; }
+
+    /// <summary>
+    /// The acrylic tint the accent policy lays over its blur, derived from <see cref="Surface"/>
+    /// so it follows the theme — in <c>SetWindowCompositionAttribute</c>'s ABGR byte order,
+    /// which is ARGB with the blue and red channels swapped.
+    /// </summary>
+    public uint BackdropTintAbgr
+    {
+        get
+        {
+            var surface = Colors[Surface];
+            return ((uint)BackdropAlpha << 24)
+                | ((uint)surface.B << 16)
+                | ((uint)surface.G << 8)
+                | surface.R;
+        }
+    }
 
     public static ThemePalette For(bool appsUseLightTheme) =>
         appsUseLightTheme ? Light() : Dark();
@@ -53,6 +86,8 @@ public sealed record ThemePalette
             brush.Freeze();
             resources[key] = brush;
         }
+
+        resources[BackdropTint] = BackdropTintAbgr;
     }
 
     private static ThemePalette Dark() => new(new Dictionary<string, Color>
@@ -73,6 +108,7 @@ public sealed record ThemePalette
         // the compositor left behind it.
         [Surface] = Color.FromArgb(0xFF, 0x20, 0x20, 0x20),
         [SurfaceCard] = Color.FromArgb(0xFF, 0x2B, 0x2B, 0x2B),
+        [BackdropVeil] = Color.FromArgb(0x8C, 0x20, 0x20, 0x20),
     });
 
     private static ThemePalette Light() => new(new Dictionary<string, Color>
@@ -89,5 +125,6 @@ public sealed record ThemePalette
         [BaseEmpty] = Color.FromArgb(0x4D, 0x80, 0x80, 0x80),
         [Surface] = Color.FromArgb(0xFF, 0xF2, 0xF2, 0xF7),
         [SurfaceCard] = Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF),
+        [BackdropVeil] = Color.FromArgb(0x8C, 0xF2, 0xF2, 0xF7),
     });
 }

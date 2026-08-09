@@ -139,9 +139,15 @@ public partial class App : Application
 
     /// <summary>
     /// Republishes the <c>OnDeck.*</c> brushes for the current app theme. Every window binds
-    /// them with <c>DynamicResource</c>, so a live theme change repaints in place.
+    /// them with <c>DynamicResource</c>, so a live theme change repaints in place. The acrylic
+    /// tint is not a brush, so the two acrylic windows re-apply it explicitly.
     /// </summary>
-    private void ApplyPalette() => ThemePalette.For(_theme!.AppsUseLightTheme).ApplyTo(Resources);
+    private void ApplyPalette()
+    {
+        ThemePalette.For(_theme!.AppsUseLightTheme).ApplyTo(Resources);
+        _flyout?.RefreshBackdrop();
+        _panel?.RefreshBackdrop();
+    }
 
     private void OpenFlyout(Point? anchorDevicePixels)
     {

@@ -66,10 +66,13 @@ public partial class FloatingPanelWindow : Window
         ApplyBackdrop();
     }
 
+    /// <summary>Re-tints the acrylic after a live theme change, exactly like the flyout's.</summary>
+    public void RefreshBackdrop() => ApplyBackdrop();
+
     /// <summary>
-    /// Same backdrop treatment as the flyout, and re-applied on every open for the same reason:
-    /// <c>SizeToContent</c> rebuilds the composition target, which comes back opaque and paints
-    /// over a backdrop DWM already accepted. See <c>windows/ACRYLIC-OPEN-ISSUE.md</c>.
+    /// Same backdrop treatment as the flyout. The accent policy composites for inactive windows
+    /// too, which matters here: this window is <c>WS_EX_NOACTIVATE</c> and is never active. See
+    /// <c>windows/ACRYLIC-OPEN-ISSUE.md</c>.
     /// </summary>
     private void ApplyBackdrop()
     {
@@ -78,15 +81,19 @@ public partial class FloatingPanelWindow : Window
         source.CompositionTarget.BackgroundColor = Colors.Transparent;
 
         DwmBackdrop.RoundCorners(source.Handle);
-        var acrylic = DwmBackdrop.ApplyAcrylic(source.Handle);
+        var acrylic = DwmBackdrop.ApplyAcrylic(source.Handle, BackdropTint());
 
-        ShellLog.Append($"[Panel] backdrop hresult=0x{acrylic:X8}");
+        ShellLog.Append($"[Panel] backdrop accent error={acrylic}");
 
-        if (acrylic != 0)
-        {
-            Root.Background = new SolidColorBrush(Color.FromRgb(0x20, 0x20, 0x20));
-        }
+        Root.SetResourceReference(
+            System.Windows.Controls.Border.BackgroundProperty,
+            acrylic == 0 ? ThemePalette.BackdropVeil : ThemePalette.Surface);
     }
+
+    private static uint BackdropTint() =>
+        Application.Current?.Resources[ThemePalette.BackdropTint] is uint tint
+            ? tint
+            : 0x0D202020;
 
     public void Toggle()
     {

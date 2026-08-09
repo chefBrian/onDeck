@@ -12,8 +12,11 @@ QA.
 discarded since the cache landed, because the port checked for PNG against an endpoint that serves
 JPEG. Nothing logged it and no test caught it — the fixture was a PNG.
 
-One cosmetic issue is open and parked by owner decision: the acrylic backdrop
-(`ACRYLIC-OPEN-ISSUE.md`).
+The acrylic backdrop, open since Phase 7b, was **resolved 2026-08-09**: the OS had stopped
+compositing `DWMWA_SYSTEMBACKDROP_TYPE` materials live (machine-wide, all apps — they render
+their solid fallback on build 26200.8973), so the backdrop now comes from the accent policy
+(`SetWindowCompositionAttribute` blur-behind) with a palette-driven tint. `ACRYLIC-OPEN-ISSUE.md`
+keeps the investigation and the constraints.
 
 ---
 
@@ -388,16 +391,15 @@ type sizes, the Segoe-UI-has-no-Medium fallback, the black `Foreground` inherita
 hardcoded `MaxHeight` that forced scrolling. See the XAML traps in §6; that list is the durable
 part.
 
-**Open, cosmetic, now two sessions deep:** the backdrop renders opaque instead of acrylic.
-**`windows/ACRYLIC-OPEN-ISSUE.md` was rewritten at the end of 7b** because its central premise was
-wrong: instrumentation proved DWM *accepts* the backdrop (`S_OK`) and WPF's composition target is
-*already* transparent — so every remedy aimed at "make DWM accept it" was aimed at the wrong layer.
-Five more fixes were tried in 7b and all failed; they are listed there so nobody repeats them.
-
-The live clue: **pressing the footer Refresh makes the flyout translucent**, and the floating panel
-— whose refresh button is the only one without a spinner animation — never becomes translucent.
-That points at an active WPF `Storyboard` changing the presentation path, which is the first thing
-to test next. Read that document before touching the backdrop.
+**Resolved, 2026-08-09, third session.** The root cause was never in the app: this machine's
+Windows build (26200.8973) composites **every** `DWMWA_SYSTEMBACKDROP_TYPE` backdrop as its solid
+fallback colour — all apps, framed or frameless, active or not — proved by poking the live
+windows and a minimal WinForms control from outside the process and reading the screenshots.
+The accent-policy path (`SetWindowCompositionAttribute`, blur-behind) still composites live and
+is what both windows use now, tinted from `ThemePalette.BackdropTintAbgr` and re-applied by
+`App.ApplyPalette` on theme change. The 7b Refresh/Storyboard clue was a coincidence of timing:
+on 2026-08-08 the machine still ran DWMSBT materials live at least sometimes; a day later it
+never did, which is what exposed the real layer. `ACRYLIC-OPEN-ISSUE.md` has the full story.
 
 **Manual verification results, 2026-08-08** (Windows 11 build 26200, single monitor, bottom
 taskbar). Phase 7a rows kept; 7b rows appended:
@@ -556,8 +558,8 @@ debounce, so a test that triggers it twice in quick succession proves nothing ab
    unverified — no second display on this machine.
 2. **`ThemeWatcher`'s change path.** *Verified in 7a.* 7b added `AppsUseLightTheme` alongside it,
    which drives the flyout palette and rides the same change event.
-3. **Acrylic vs solid fallback.** *Answered:* the attribute returns `S_OK` and the surface is opaque
-   anyway, so the fallback never fires. Still open — `ACRYLIC-OPEN-ISSUE.md`.
+3. **Acrylic vs solid fallback.** *Resolved 2026-08-09* — the OS stopped compositing DWMSBT
+   materials live; both windows now use the accent-policy blur. See `ACRYLIC-OPEN-ISSUE.md`.
 4. **Double-launch.** *Verified in 7b* — second launch exits 0 and one instance remains.
 5. Still not run: display scaling 100/125/150/200%, docked taskbar edges, Quit leaving no process.
 

@@ -70,6 +70,45 @@ public class ThemePaletteTests
     }
 
     [Fact]
+    public void BackdropTintFollowsTheSurfaceColour()
+    {
+        // ABGR, not ARGB: the accent policy's GradientColor swaps the byte order. A swap is
+        // invisible on the grey dark surface (B == R), so the light surface #F2F2F7 is the one
+        // that catches it: blue must land in the high byte.
+        Assert.Equal(0x0D202020u, ThemePalette.For(appsUseLightTheme: false).BackdropTintAbgr);
+        Assert.Equal(0x0DF7F2F2u, ThemePalette.For(appsUseLightTheme: true).BackdropTintAbgr);
+    }
+
+    [Fact]
+    public void ApplyTo_PublishesTheBackdropTint()
+    {
+        var resources = new ResourceDictionary();
+
+        ThemePalette.For(appsUseLightTheme: true).ApplyTo(resources);
+
+        // The windows re-read this at RefreshBackdrop time, so a live theme change retints
+        // the acrylic without anyone re-plumbing a value to them.
+        Assert.Equal(0x0DF7F2F2u, Assert.IsType<uint>(resources[ThemePalette.BackdropTint]));
+    }
+
+    [Fact]
+    public void VeilIsATranslucentSurface()
+    {
+        foreach (var light in new[] { true, false })
+        {
+            var palette = ThemePalette.For(light);
+            var veil = palette.Colors[ThemePalette.BackdropVeil];
+            var surface = palette.Colors[ThemePalette.Surface];
+
+            // The veil is the app-side darkening laid over the accent blur - the acrylic look
+            // with the darkness under our control instead of the OS material's. It must carry
+            // the surface's hue and real translucency, or the blur underneath is pointless.
+            Assert.Equal(0x8C, veil.A);
+            Assert.Equal((surface.R, surface.G, surface.B), (veil.R, veil.G, veil.B));
+        }
+    }
+
+    [Fact]
     public void SurfacesAreFullyOpaque()
     {
         foreach (var palette in new[]
